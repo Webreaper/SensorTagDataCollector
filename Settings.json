@@ -1,0 +1,27 @@
+{
+  "indexname": "sensortagdata",
+  "elasticserver": "192.168.0.66",
+  "noDataWarningMins": 30,
+  "logLocation": "./sensortags.log",
+
+  "hive" : {
+    "username": "hiveuser@example.com",
+    "password": "somel337passwor7d" 
+  },
+
+  "wirelesstag" :  {
+      "wirelesstagserviceurl": "https://my.wirelesstag.net/",
+      "username": "sensortaguser@example.com",
+      "password": "somel337passwor7d" 
+  },
+
+  "email" : {
+    "smtpserver" : "smtp.gmail.com",
+    "smtpport": 586,
+    "username" : "emailuser@gmail.com",
+    "password" : "somel337passwor7d",
+    "toaddress" : "notificationrecipient@example.com",
+    "fromaddress" : "notificationsender@example.com",
+    "toname" : "Sensor Tag Warning Recipient"
+  }
+}
