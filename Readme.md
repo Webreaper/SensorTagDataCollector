@@ -7,13 +7,22 @@ Wireless Sensor Tags (http://wirelesstag.net) are small sensors which measure hu
 
 As an added bonus, the process can also query the historic temperature of a Hive Home heating system Thermostat, and ingest that data into the ES index too.
 
+### Features
+
+- Month-based index generation (e.g., sensordata-2017-10) with top-level alias (e.g., sensordata) 
+- High-watermark checking for each device UUID so only new data is ingested on each run
+- Collection of temp (C), humidity (%RH), ambient light level (lux) and battery-level (volt) collection
+- Optional configuration to send an email if no data received for n minutes, or battery level for any device is too low
+
 ### Settings Storage
 
 The service reads the various settings (ES info, WirelessTag username/password) from a json file. It then queries the service, gathering up the data before writing it to the ES cluster/index specified in the settings file. Data is written to month-based indexes, and then an alias created to cover all indexes.
 
 ### Running the service
 
-The service is a .Net/C# application, developed with Visual Studio fo Mac. It can be run on any architecture - for example, I run it using Mono, on a linux-based Synology NAS.
+The service is a .Net/C# application, developed with Visual Studio fo Mac. It can be run on any architecture - for example, I run it using Mono, on a linux-based Synology NAS. Example command-line:
+
+   mono SensorTagDataCollector.exe
 
 ### Disclaimer
 
