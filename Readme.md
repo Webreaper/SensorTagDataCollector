@@ -7,6 +7,8 @@ Wireless Sensor Tags (http://wirelesstag.net) are small sensors which measure hu
 
 As an added bonus, the process can also query the historic temperature of a Hive Home heating system Thermostat, and ingest that data into the ES index too.
 
+![Alt text](/SensorTagExample.png?raw=true "Example Kibana Dashboard")
+
 ### Features
 
 - Month-based index generation (e.g., sensordata-2017-10) with top-level alias (e.g., sensordata) 
