@@ -113,7 +113,6 @@ namespace SensorTagElastic
         /// </summary>
         public ICollection<SensorReading> QueryHiveData( HiveService service, List<SensorDevice> allDevices )
         {
-            const int maxHiveVoltage = 3;
 
             List<SensorReading> readings = new List<SensorReading>();
 
@@ -133,8 +132,6 @@ namespace SensorTagElastic
 
             if (values.Any())
             {
-                Utils.Log("Found {0} readings for device '{1}' (latest: {2:dd-MMM-yy HH:mm:ss}).", readings.Count(), device.name, readings.Max(x => x.timestamp));
-
                 SensorReading lastReading = null;
 
                 foreach (var pair in values)
@@ -152,6 +149,13 @@ namespace SensorTagElastic
                     readings.Add(lastReading);
                 }
 
+                if (readings.Any())
+                {
+                    Utils.Log("Found {0} readings for device '{1}' (latest: {2:dd-MMM-yy HH:mm:ss}).", readings.Count(), device.name, readings.Max(x => x.timestamp));
+                }
+                else
+                    Utils.Log("No readings found for device {1}.", device.name);
+                
                 // Now query the current battery level, and set it in the most recent reading.
                 lastReading.batteryPercentage = service.QueryHiveBattery();
             }

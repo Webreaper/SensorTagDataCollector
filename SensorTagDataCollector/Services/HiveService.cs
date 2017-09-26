@@ -153,17 +153,18 @@ namespace Hive
                         {
                             var x = node.features.temperature_sensor_v1;
 
-                            if( x != null )
+                            if( x != null && x.temperature != null )
                             {
                                 double currentTemp = x.temperature.displayValue;
                                 Utils.Log("Hive temp at {0:dd-MMM-yyyy HH:mm:ss} => {1}", Utils.getFromEpoch(x.temperature.reportChangedTime), currentTemp);
                             }
                         }
+
                         if (node.name.Equals("Your Thermostat"))
                         {
                             var x = node.features.battery_device_v1;
 
-                            if (x != null)
+                            if (x != null && x.batteryLevel != null )
                             {
                                 batteryLevel = x.batteryLevel.displayValue;
                                 Utils.Log("Hive battery at {0:dd-MMM-yyyy HH:mm:ss} => {1}", Utils.getFromEpoch(x.batteryLevel.reportChangedTime), batteryLevel);
