@@ -56,7 +56,7 @@ namespace SensorTagElastic
         /// <param name="deviceUUID">Device UUID.</param>
         private DateTime getHighWaterMark(string deviceUUID)
         {
-            Utils.Log("Getting high water mark...");
+            Utils.Log("Getting high water mark for {0}...", deviceUUID);
 
             SearchRequest req = new SearchRequest {
                 From = 0, Size = 1, Query = new TermQuery{ Field = "device.uuid.keyword", Value = deviceUUID }, 
@@ -271,44 +271,72 @@ namespace SensorTagElastic
             List<SensorReading> allReadings = new List<SensorReading>();
             List<SensorDevice> allDevices = new List<SensorDevice>();
 
-            if (settings.hive != null)
+            try
             {
-                HiveService service = new HiveService();
-
-                if (service.SignIn(settings.hive.username, settings.hive.password))
+                if (settings.hive != null)
                 {
+                    HiveService service = new HiveService();
 
-                    var hiveReadings = QueryHiveData(service, allDevices);
+                    if (service.SignIn(settings.hive.username, settings.hive.password))
+                    {
 
-                    allReadings.AddRange(hiveReadings);
+                        var hiveReadings = QueryHiveData(service, allDevices);
+
+                        allReadings.AddRange(hiveReadings);
+                    }
                 }
             }
-
-            if (settings.wirelesstag != null)
+            catch( Exception ex )
             {
-                WirelessSensorTagAPI tagService = new WirelessSensorTagAPI(settings.wirelesstag.WirelessTagServiceUrl);
+                Utils.Log( "Exception querying Hive data. {0}", ex);
+            }
 
-                if (tagService.SignIn(settings.wirelesstag.username, settings.wirelesstag.password))
+            try
+            {
+                if (settings.wirelesstag != null)
                 {
-                    var wirelessTagReadings = QuerySensorTags(tagService, allDevices);
+                    WirelessSensorTagAPI tagService = new WirelessSensorTagAPI(settings.wirelesstag.WirelessTagServiceUrl);
 
-                    allReadings.AddRange(wirelessTagReadings);
+                    if (tagService.SignIn(settings.wirelesstag.username, settings.wirelesstag.password))
+                    {
+                        var wirelessTagReadings = QuerySensorTags(tagService, allDevices);
+
+                        allReadings.AddRange(wirelessTagReadings);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                Utils.Log("Exception querying SensorTag data. {0}", ex);
             }
 
             if( allReadings.Any() && settings.email != null )
             {
-                StoreSensorReadings(allReadings);
-
-                List<Alert> alerts = new List<Alert>();
-
-                // See if any of the data we got back indicated a drained battery.
-                CheckBatteryStatus(allReadings, settings.lowBatteryThreshold, alerts);
-                CheckMissingData( allDevices, alerts );
-
-                if (alerts.Any())
+                try
                 {
-                    Utils.SendAlertEmail(settings.email, alerts);
+                    StoreSensorReadings(allReadings);
+                }
+                catch (Exception ex)
+                {
+                    Utils.Log("Exception ingesting data in ES. {0}", ex);
+                }
+
+                try
+                {
+                    List<Alert> alerts = new List<Alert>();
+
+                    // See if any of the data we got back indicated a drained battery.
+                    CheckBatteryStatus(allReadings, settings.lowBatteryThreshold, alerts);
+                    CheckMissingData(allDevices, alerts);
+
+                    if (alerts.Any())
+                    {
+                        Utils.SendAlertEmail(settings.email, alerts);
+                    }
+                }
+                catch( Exception ex )
+                {
+                    Utils.Log("Exception checking missing data. {0}", ex);
                 }
             }
 
