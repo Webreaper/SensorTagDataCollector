@@ -1,16 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
+using Nest;
 
 namespace SensorTagElastic
 {
     [DataContract]
+    [ElasticsearchType]
     public class SensorDevice
     {
         [DataMember]
-        public string name { get; set; }
-        [DataMember]
+        [Keyword]
         public string uuid { get; set; }
+        [DataMember]
+        public string name { get; set; }
         [DataMember]
         public string type { get; set; }
         [DataMember]

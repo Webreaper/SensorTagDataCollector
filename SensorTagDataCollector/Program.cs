@@ -22,9 +22,12 @@ namespace SensorTagElastic
     /// </summary>
     public class MainClass
     {
+        [ElasticsearchType]
         public class SensorReading
         {
+            public string Id { get; set; }
             public DateTime timestamp { get; set; }
+            public DateTime ingsestionTimeStamp { get; set; }
             public SensorDevice device { get; set; }
             public double? temperature { get; set; }
             public double? humidity { get; set; }
@@ -53,45 +56,54 @@ namespace SensorTagElastic
         /// Find the timestamp of the most recent record for each device. 
         /// </summary>
         /// <returns>The high water mark.</returns>
-        /// <param name="deviceUUID">Device UUID.</param>
-        private DateTime getHighWaterMark(string deviceUUID)
+        /// <param name="device">Device.</param>
+        private DateTime getHighWaterMark(string uuid)
         {
-            Utils.Log("Getting high water mark for {0}...", deviceUUID);
+            Utils.Log("Getting high water mark for {0}...", uuid);
 
-            SearchRequest req = new SearchRequest {
-                From = 0, Size = 1, Query = new TermQuery{ Field = "device.uuid.keyword", Value = deviceUUID }, 
+            SearchRequest req = new SearchRequest( settings.indexname )
+            {
+                From = 0,
+                Size = 1,
+                Query = new TermQuery { Field = "device.uuid.keyword", Value = uuid },
                 Sort = new List<ISort> { new SortField { Field = "timestamp", Order = SortOrder.Descending } }
             };
 
             var searchResponse = EsClient.Search<SensorReading>(req);
 
+            if (searchResponse.Documents.Count() > 1)
+                throw new ArgumentOutOfRangeException("More than one record returned from high-watermark for " + uuid);
+            
             var mostRecent = searchResponse.Documents.FirstOrDefault();
 
             if (mostRecent != null)
             {
+                if (mostRecent.device.uuid != uuid)
+                    throw new ArgumentException("High watermark returned for incorrect UUID!");
+                
                 return mostRecent.timestamp.AddSeconds(1);
             }
-            return new DateTime( 2017, 1, 1, 0, 0, 0, DateTimeKind.Utc );
+            return new DateTime(2017, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         }
 
         /// <summary>
         /// Queries the data in the sensor tag.
         /// </summary>
-        public ICollection<SensorReading> QuerySensorTags(WirelessSensorTagAPI tagService, List<SensorDevice> allDevices )
+        public ICollection<SensorReading> QuerySensorTags(WirelessSensorTagAPI tagService, List<SensorDevice> allDevices)
         {
             var result = new List<SensorReading>();
 
             Utils.Log("Querying tag list...");
-            var tagList = tagService.MakeRestRequest<TagList>("ethClient.asmx/GetTagList", new {});
+            var tagList = tagService.MakeRestRequest<TagList>("ethClient.asmx/GetTagList", new { });
 
             if (tagList.d.Any())
             {
                 foreach (var tag in tagList.d)
                 {
-                    var fromDate = getHighWaterMark(tag.uuid );
-                    var toDate = DateTime.UtcNow;
+                    var fromDate = getHighWaterMark(tag.uuid);
+                    var toDate = DateTime.UtcNow.AddDays(1);
 
-                    Utils.Log( "Querying {0} data between {1} and {2}...", tag.name, fromDate, toDate );
+                    Utils.Log("Querying {0} data between {1} and {2}...", tag.name, fromDate, toDate);
 
                     var body = new { id = tag.slaveId, fromDate, toDate };
                     var data = tagService.MakeRestRequest<RawTempData>("ethLogs.asmx/GetTemperatureRawData", body);
@@ -100,7 +112,22 @@ namespace SensorTagElastic
                     {
                         SensorDevice device = new SensorDevice { uuid = tag.uuid, name = tag.name, type = "Tag", location = "" };
                         allDevices.Add(device);
-                        result.AddRange( CreateSensorData(device, data) );
+                        var records = CreateSensorData(device, data);
+
+                        var firstReading = records.Min(x => x.timestamp);
+                        var lastReading = records.Max(x => x.timestamp);
+                        Utils.Log("Found readings from {0:dd-MMM-yyyy HH:mm:ss} to {1:dd-MMM-yyyy HH:mm:ss}", firstReading, lastReading);
+
+                        var newRecords = records.Where(x => x.timestamp > fromDate).ToList();
+
+                        if (newRecords.Any())
+                        {
+                            Utils.Log("Filtered {0} previously-seen records - storing {1}", records.Count() - newRecords.Count(), newRecords.Count());
+
+                            result.AddRange(newRecords);
+                        }
+                        else
+                            Utils.Log("All records were older than high watermark. Ignoring.");
                     }
                 }
             }
@@ -111,7 +138,7 @@ namespace SensorTagElastic
         /// <summary>
         /// Queries the data in the sensor tag.
         /// </summary>
-        public ICollection<SensorReading> QueryHiveData( HiveService service, List<SensorDevice> allDevices )
+        public ICollection<SensorReading> QueryHiveData(HiveService service, List<SensorDevice> allDevices)
         {
 
             List<SensorReading> readings = new List<SensorReading>();
@@ -142,10 +169,12 @@ namespace SensorTagElastic
                         temperature = pair.Value,
                         lux = null,
                         humidity = null,
-                        battery = battValues[pair.Key],
                         device = device
                     };
 
+                    if (battValues.ContainsKey(pair.Key))
+                        lastReading.battery = battValues[pair.Key];
+                    
                     readings.Add(lastReading);
                 }
 
@@ -155,14 +184,13 @@ namespace SensorTagElastic
                 }
                 else
                     Utils.Log("No readings found for device {1}.", device.name);
-                
+
                 // Now query the current battery level, and set it in the most recent reading.
                 lastReading.batteryPercentage = service.QueryHiveBattery();
             }
 
             return readings;
         }
-
 
         /// <summary>
         /// Given a device and a set of data returned from the SensorTag API, 
@@ -194,7 +222,7 @@ namespace SensorTagElastic
             }
 
             if (readings.Any())
-                Utils.Log( "Found {0} readings for device '{1}' (latest: {2:dd-MMM-yy HH:mm:ss}).", readings.Count(), device.name, readings.Max(x => x.timestamp) );
+                Utils.Log("Found {0} readings for device '{1}' (latest: {2:dd-MMM-yy HH:mm:ss}).", readings.Count(), device.name, readings.Max(x => x.timestamp));
 
             return readings;
         }
@@ -203,30 +231,43 @@ namespace SensorTagElastic
         /// Stores the sensor readings.
         /// </summary>
         /// <param name="readings">Readings.</param>
-        private void StoreSensorReadings( ICollection<SensorReading> readings )
+        private void StoreSensorReadings(ICollection<SensorReading> readings)
         {
             if (readings.Any())
             {
-                Utils.Log("Indexing {0} sensor readings from {1} to {2}", readings.Count(), readings.First().timestamp, readings.Last().timestamp);
+                var uniqueReadings = readings.Distinct().ToList();
 
-                var years = readings.GroupBy(x =>  x.timestamp.Year, (year, values) => 
-                                             new { year, values = values.OrderBy(x => x.timestamp).ToList() })
-                                            .ToList();
+                if (uniqueReadings.Count() < readings.Count())
+                    Utils.Log("Conflated duplicate readings from {0} to {1}", readings.Count(), uniqueReadings.Count());
+                
+                Utils.Log("Indexing {0} sensor readings from {1} to {2}", uniqueReadings.Count(), uniqueReadings.First().timestamp, uniqueReadings.Last().timestamp);
+
+                var years = uniqueReadings.GroupBy(x => x.timestamp.Year, (year, values) =>
+                                            new { year, values = values.OrderBy(x => x.timestamp).ToList() })
+                                    .ToList();
+
+                var now = DateTime.UtcNow;
 
                 foreach (var kvp in years)
                 {
                     if (kvp.values.Any())
                     {
                         string yearIndex = string.Format("{0}-{1}", settings.indexname, kvp.year);
+
+                        foreach (var x in kvp.values)
+                            x.ingsestionTimeStamp = now;
+                        
                         ElasticUtils.BulkInsert(EsClient, yearIndex, kvp.values as ICollection<SensorReading>);
                     }
                 }
 
                 ElasticUtils.createDateBasedAliases(EsClient, settings.indexname);
+
+                ElasticUtils.DeleteDuplicates( EsClient, settings.indexname);
             }
             else
                 Utils.Log("No sensor readings available.");
-		}
+        }
 
         /// <summary>
         /// Analyses the battery levels for all devices and pulls out the lowest battery 
@@ -238,10 +279,10 @@ namespace SensorTagElastic
         {
             Utils.Log("Checking battery status for devices...");
 
-            var lowBatteryDevices = readings.Where(x => x.battery < threshold && x.battery > 0.0 )
-                                            .GroupBy(x => x.device, 
-                                                     y => y.battery, 
-                                                     (key, b ) => new { device = key, lowestBattery = b.Min() } )
+            var lowBatteryDevices = readings.Where(x => x.battery < threshold && x.battery > 0.0)
+                                            .GroupBy(x => x.device,
+                                                     y => y.battery,
+                                                     (key, b) => new { device = key, lowestBattery = b.Min() })
                                             .ToList();
 
             if (lowBatteryDevices.Any())
@@ -257,7 +298,11 @@ namespace SensorTagElastic
             }
         }
 
-        public void ProcessTags( Settings settings )
+        /// <summary>
+        /// Main work method
+        /// </summary>
+        /// <param name="settings">Settings.</param>
+        public void ProcessTags(Settings settings)
         {
             this.settings = settings;
             Uri esPath = new UriBuilder

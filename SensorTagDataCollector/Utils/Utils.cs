@@ -74,7 +74,7 @@ namespace SensorTagElastic
         public static void Log(string format, params object[] args)
         {
             string msg = string.Format(format, args);
-            string log = string.Format("[{0:yyyy-MM-dd HH:mm:ss}] {1}", DateTime.Now, msg);
+            string log = string.Format("[{0:yyyy-MM-dd HH:mm:ss}] {1}", DateTime.UtcNow, msg);
             Console.WriteLine(log);
 
             if( !string.IsNullOrEmpty(logLocation) )
