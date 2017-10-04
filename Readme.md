@@ -11,10 +11,12 @@ As an added bonus, the process can also query the historic temperature of a Hive
 
 ### Features
 
-- Month-based index generation (e.g., sensordata-2017-10) with top-level alias (e.g., sensordata) 
+- Year-based index generation (e.g., sensordata-2017) with top-level alias creation (e.g., sensordata) 
 - High-watermark checking for each device UUID so only new data is ingested on each run
+- Automatic detection of new tags when registered with your account
 - Collection of temp (C), humidity (%RH), ambient light level (lux) and battery-level (volt) collection
 - Optional configuration to send an email if no data received for n minutes, or battery level for any device is too low
+- Optional collection of HiveHome temperature and battery data
 
 ### Settings Storage
 
