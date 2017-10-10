@@ -21,6 +21,19 @@ namespace SensorTagElastic
     }
 
     [DataContract]
+    public class WUGSettings
+    {
+        [DataMember]
+        public string apiKey { get; set; }
+        [DataMember]
+        public string Country { get; set; }
+        [DataMember]
+        public string City { get; set; }
+        [DataMember]
+        public string IndexName { get; set; }
+    }
+
+    [DataContract]
     public class EmailSettings
     {
         [DataMember]
@@ -80,5 +93,7 @@ namespace SensorTagElastic
         public WirelessTagSettings wirelesstag { get; set; }
         [DataMember]
         public EmailSettings email { get; set; }
+        [DataMember]
+        public WUGSettings weatherUnderground { get; set; }
     }
 }

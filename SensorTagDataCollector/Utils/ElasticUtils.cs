@@ -53,29 +53,38 @@ namespace SensorTagElastic
         public static void BulkInsert<T>(ElasticClient esClient, string index, ICollection<T> readings) where T : class
         {
             const int pageSize = 1000;
-            Utils.Log("Performing bulk insert of {0} {1} into {2}.", readings.Count, typeof(T).Name, index);
 
-            var waitHandle = new CountdownEvent(1);
-            int totalPages = readings.Count / pageSize;
+            // Handle type-specific indexing for polymorphic lists of objects. :)
+            var types = readings.GroupBy(x => x.GetType())
+                                .Select(x => new { Type = x.Key, Items = x.Select( r => r ).ToList() });
 
-            var bulkAll = esClient.BulkAll(readings, b => b
-                                           .Index(index)
-                                           .BackOffRetries(2)
-                                           .BackOffTime("30s")
-                                           .RefreshOnCompleted(true)
-                                           .MaxDegreeOfParallelism(4)
-                                           .Size(pageSize)
-            );
+            foreach (var typeBatch in types)
+            {
+                Utils.Log("Performing bulk insert of {0} {1} into {2}.", typeBatch.Items.Count(), typeBatch.Type.Name, index);
 
-            bulkAll.Subscribe(new BulkAllObserver(
-                onNext: (b) => { Utils.Log(" Working - page {0} of {1}...", b.Page, totalPages); },
-                onError: (e) => { throw e; },
-                onCompleted: () => waitHandle.Signal()
-            ));
+                var waitHandle = new CountdownEvent(1);
+                int totalPages = readings.Count / pageSize;
 
-            waitHandle.Wait();
+                var bulkAll = esClient.BulkAll(typeBatch.Items, b => b
+                                               .Index(index)
+                                               .Type(typeBatch.Type.Name)
+                                               .BackOffRetries(2)
+                                               .BackOffTime("30s")
+                                               .RefreshOnCompleted(true)
+                                               .MaxDegreeOfParallelism(4)
+                                               .Size(pageSize)
+                );
 
-            Utils.Log("Index complete: {0} documents indexed", readings.Count );
+                bulkAll.Subscribe(new BulkAllObserver(
+                    onNext: (b) => { Utils.Log(" Working - page {0} of {1}...", b.Page, totalPages); },
+                    onError: (e) => { throw e; },
+                    onCompleted: () => waitHandle.Signal()
+                ));
+
+                waitHandle.Wait();
+
+                Utils.Log("Index complete: {0} documents indexed", typeBatch.Items.Count());
+            }
         }
 
         public static void createDateBasedAliases(ElasticClient esClient, string indexName)
@@ -133,6 +142,35 @@ namespace SensorTagElastic
 
                 results = esClient.Scroll<T>(scrollTTLMins, results.ScrollId);
             }
+        }
+
+        /// <summary>
+        /// Find the timestamp of the most recent record for each device. 
+        /// </summary>
+        /// <returns>The high water mark.</returns>
+        /// <param name="indexName">IndexName</param>
+        /// <param name="query">Term Query to select records</param>
+        public static T getHighWaterMark<T>(ElasticClient client, string indexName, QueryContainer query) where T : class
+        {
+            if (query == null)
+                query = new MatchAllQuery();
+            
+            SearchRequest req = new SearchRequest(indexName)
+            {
+                From = 0,
+                Size = 1,
+                Query = query,
+                Sort = new List<ISort> { new SortField { Field = "timestamp", Order = SortOrder.Descending } }
+            };
+
+            var searchResponse = client.Search<T>(req);
+
+            if (searchResponse.Documents.Count() > 1)
+                throw new ArgumentOutOfRangeException("More than one record returned from high-watermark");
+
+            var mostRecent = searchResponse.Documents.FirstOrDefault();
+
+            return mostRecent;
         }
 
         public static void DeleteDuplicates(ElasticClient client, string index)
