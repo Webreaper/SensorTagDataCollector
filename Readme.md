@@ -5,7 +5,7 @@
 
 Wireless Sensor Tags (http://wirelesstag.net) are small sensors which measure humidity, temperature and ambient light level, and transmit this back to a hub to be stored in the cloud. This app uses the WirelessTag API (http://wirelesstag.net/apidoc.html) to query that data, transform it, and ingest it into an ElasticSearch instance for creating dashboards, plotting trends, etc.
 
-As an added bonus, the process can also query the historic temperature of a Hive Home heating system Thermostat, and ingest that data into the ES index too.
+As an added bonus, the process can also query the historic temperature of a Hive Home heating system Thermostat, and ingest that data into the ES index too. If you have a Weather Underground (WUnderground) API key, you can also specfy this in the settings, along with a country and city, and the app will pull in complete weather data history for that location and ingest it into ElasticSearch. 
 
 ![Alt text](/SensorTagExample.png?raw=true "Example Kibana Dashboard")
 
@@ -17,6 +17,7 @@ As an added bonus, the process can also query the historic temperature of a Hive
 - Collection of temp (C), humidity (%RH), ambient light level (lux) and battery-level (volt) collection
 - Optional configuration to send an email if no data received for n minutes, or battery level for any device is too low
 - Optional collection of HiveHome temperature and battery data
+- Optional collection of Weather Underground weather (temp/humidity/rainfall/wind/etc) data
 
 ### Settings Storage
 
