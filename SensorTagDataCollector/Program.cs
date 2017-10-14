@@ -28,7 +28,7 @@ namespace SensorTagElastic
         {
             public string Id { get; set; }
             public DateTime timestamp { get; set; }
-            public DateTime ingsestionTimeStamp { get; set; }
+            public DateTime ingestionTimeStamp { get; set; }
         }
 
         [ElasticsearchType]
@@ -296,7 +296,7 @@ namespace SensorTagElastic
                         string yearIndex = string.Format("{0}-{1}", indexName, kvp.year);
 
                         foreach (var x in kvp.values)
-                            x.ingsestionTimeStamp = now;
+                            x.ingestionTimeStamp = now;
                         
                         ElasticUtils.BulkInsert(EsClient, yearIndex, kvp.values);
                     }
@@ -450,11 +450,10 @@ namespace SensorTagElastic
             var today = DateTime.Now;
             int totalCalls = 0;
 
-            while (mostRecent < today && totalCalls < 50 )
+            while (mostRecent < today && totalCalls < 200 )
             {
                 Utils.Log("Querying weather for {0}", mostRecent);
 
-                mostRecent = mostRecent.AddDays(1);
                 var readings = weather.GetHistory(mostRecent);
                 allReadings.AddRange(readings);
                 totalCalls++;
