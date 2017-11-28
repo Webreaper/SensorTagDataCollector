@@ -50,26 +50,22 @@ namespace SensorTagElastic
             return esClient;
         }
 
-        public static void BulkInsert<T>(ElasticClient esClient, string index, ICollection<T> readings) where T : class
+        public static void BulkInsert<T>( ElasticClient client, string index, ICollection<T> items ) where T : class
         {
             const int pageSize = 1000;
+            string typeName = typeof(T).Name;
 
-            // Handle type-specific indexing for polymorphic lists of objects. :)
-            var types = readings.GroupBy(x => x.GetType())
-                                .Select(x => new { Type = x.Key, Items = x.Select( r => r ).ToList() });
+            Utils.Log("Performing bulk insert of {0} {1} into {2}.", items.Count(), typeName, index);
 
-            foreach (var typeBatch in types)
+            using (var waitHandle = new CountdownEvent(1))
             {
-                Utils.Log("Performing bulk insert of {0} {1} into {2}.", typeBatch.Items.Count(), typeBatch.Type.Name, index);
+                int totalPages = items.Count / pageSize;
 
-                var waitHandle = new CountdownEvent(1);
-                int totalPages = readings.Count / pageSize;
-
-                var bulkAll = esClient.BulkAll(typeBatch.Items, b => b
-                                               .Index(index)
-                                               .Type(typeBatch.Type.Name)
+                var bulkAll = client.BulkAll(items, b => b
+                                               .Index( index.ToLower() )
+                                               .Type(typeName)
                                                .BackOffRetries(2)
-                                               .BackOffTime("30s")
+                                               .BackOffTime("10s")
                                                .RefreshOnCompleted(true)
                                                .MaxDegreeOfParallelism(4)
                                                .Size(pageSize)
@@ -77,14 +73,20 @@ namespace SensorTagElastic
 
                 bulkAll.Subscribe(new BulkAllObserver(
                     onNext: (b) => { Utils.Log(" Working - page {0} of {1}...", b.Page, totalPages); },
-                    onError: (e) => { throw e; },
-                    onCompleted: () => waitHandle.Signal()
+                    onError: (e) => { 
+                        Utils.Log("Exception: " + e.Message); 
+                        waitHandle.Signal(); 
+                        throw e; 
+                    },
+                    onCompleted: () =>
+                    {
+                        Utils.Log("Index complete: {0} documents indexed", items.Count());
+                        waitHandle.Signal();
+                    }
                 ));
 
                 waitHandle.Wait();
-
-                Utils.Log("Index complete: {0} documents indexed", typeBatch.Items.Count());
-            }
+            }    
         }
 
         public static void createDateBasedAliases(ElasticClient esClient, string indexName)
@@ -110,19 +112,24 @@ namespace SensorTagElastic
         /// <param name="index">Index.</param>
         /// <param name="modifier">Modifier.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public static void ScanAllDocs<T>( ElasticClient esClient, string index, Expression<Func<T, object>> sortField, Action<T, string> modifier ) where T: class 
+        public static void ScanAllDocs<T>( ElasticClient esClient, string index, string sortField, Action<T, string> modifier, QueryContainer query ) where T: class 
         {
             const string scrollTTLMins = "10m";
             const int scrollPageSize = 500;
 
-            ISearchResponse<T> scanResults = esClient.Search<T>(s => s
-              .From(0)
-              .Size(scrollPageSize)
-              .MatchAll()
-              .Index(index)
-              .Sort( sort => sort.Ascending( sortField)) 
-              .Scroll(scrollTTLMins)
-            );
+            if (query == null)
+                query = new MatchAllQuery();
+
+            var req = new SearchRequest(index)
+            {
+                From = 0,
+                Size = scrollPageSize,
+                Query = query,
+                Sort = new List<ISort> { new SortField { Field = sortField, Order = SortOrder.Ascending } },
+                Scroll = scrollTTLMins
+            };
+
+            ISearchResponse<T> scanResults = esClient.Search<T>(req);
 
             if( scanResults.Hits.Any() )
             {
@@ -154,12 +161,19 @@ namespace SensorTagElastic
         {
             if (query == null)
                 query = new MatchAllQuery();
-            
-            SearchRequest req = new SearchRequest(indexName)
+
+            var typeQuery = new TypeQuery
+            {
+                Name = "named_query",
+                Boost = 1.1,
+                Value = typeof( T ).Name
+            };
+
+            var req = new SearchRequest(indexName)
             {
                 From = 0,
                 Size = 1,
-                Query = query,
+                Query = query && typeQuery,
                 Sort = new List<ISort> { new SortField { Field = "timestamp", Order = SortOrder.Descending } }
             };
 
@@ -179,7 +193,7 @@ namespace SensorTagElastic
 
             var allDocs = new Dictionary<string, SensorReading>();
 
-            ScanAllDocs<SensorReading>(client, index, x => x.timestamp, (doc, id) => { doc.Id = id; allDocs.Add(id, doc); });
+            ScanAllDocs<SensorReading>(client, index, "timestamp", (doc, id) => { doc.Id = id; allDocs.Add(id, doc); }, null);
 
             Utils.Log("{0} documents loaded from ES", allDocs.Count());
             try

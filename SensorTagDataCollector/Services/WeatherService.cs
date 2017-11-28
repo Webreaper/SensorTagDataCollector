@@ -91,12 +91,11 @@ namespace Weather
 
         }
 
-        public ICollection<Reading> GetHistory( DateTime date )
+        public bool GetHistory( DateTime date, IList<WeatherReading> weatherReadings, IList<WeatherSummary> summaryReadings )
         {
-            ICollection<Reading> readings = new List<Reading>();
-
             string queryDate = string.Format("{0:yyyyMMdd}", date);
             string url = $"history_{queryDate}/q/{settings.Country}/{settings.City}.json";
+            bool success = true;
 
             var data = MakeRestRequest<WUGPayload>(url);
 
@@ -124,7 +123,7 @@ namespace Weather
                             fog = (obs.fog == "1"),
                         };
 
-                        readings.Add(reading);
+                        weatherReadings.Add(reading);
                     }
                 }
 
@@ -132,7 +131,7 @@ namespace Weather
                 {
                     foreach (var summary in data.history.dailysummary)
                     {
-                        string fullDate = $"{summary.date.year}/{summary.date.mon}/{summary.date.mday} 23:59:59";
+                        string fullDate = $"{summary.date.year}/{summary.date.mon}/{summary.date.mday} 00:00:00";
                         var parsedDate = DateTime.ParseExact(fullDate, "yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture);
 
                         WeatherSummary summaryReading = new WeatherSummary()
@@ -149,14 +148,17 @@ namespace Weather
                             minWindSpeedKMH = safeParseDouble(summary.minwspdm)
                         };
 
-                        readings.Add(summaryReading);
+                        summaryReadings.Add(summaryReading);
                     }
                 }
             }
             else
+            {
                 Utils.Log("No data returned from WUG API - possible API limit breach.");
+                success = false;
+            }
 
-            return readings;
+            return success;
         }
 
         private double safeParseDouble( string input )

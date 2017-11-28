@@ -31,6 +31,8 @@ namespace SensorTagElastic
         public string City { get; set; }
         [DataMember]
         public string IndexName { get; set; }
+        [DataMember]
+        public string SummaryIndexName { get; set; }
     }
 
     [DataContract]

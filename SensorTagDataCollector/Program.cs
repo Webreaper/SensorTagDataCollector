@@ -128,6 +128,24 @@ namespace SensorTagElastic
         }
 
         /// <summary>
+        /// Find the timestamp of the most recent record for each device. 
+        /// </summary>
+        /// <returns>The high water mark.</returns>
+        private DateTime getSummaryHighWaterMark()
+        {
+            Utils.Log("Getting high water mark for weather...");
+
+            var mostRecent = ElasticUtils.getHighWaterMark<WeatherSummary>(EsClient, settings.weatherUnderground.IndexName, null);
+
+            if (mostRecent != null)
+            {
+                return mostRecent.timestamp.AddSeconds(1);
+            }
+
+            return new DateTime(2014, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        }
+
+        /// <summary>
         /// Queries the data in the sensor tag.
         /// </summary>
         public ICollection<SensorReading> QuerySensorTags(WirelessSensorTagAPI tagService, List<SensorDevice> allDevices)
@@ -149,26 +167,29 @@ namespace SensorTagElastic
                     var body = new { id = tag.slaveId, fromDate, toDate };
                     var data = tagService.MakeRestRequest<RawTempData>("ethLogs.asmx/GetTemperatureRawData", body);
 
-                    if (data != null && data.d != null)
+                    if (data != null && data.d != null )
                     {
                         SensorDevice device = new SensorDevice { uuid = tag.uuid, name = tag.name, type = "Tag", location = "" };
                         allDevices.Add(device);
                         var records = CreateSensorData(device, data);
 
-                        var firstReading = records.Min(x => x.timestamp);
-                        var lastReading = records.Max(x => x.timestamp);
-                        Utils.Log("Found readings from {0:dd-MMM-yyyy HH:mm:ss} to {1:dd-MMM-yyyy HH:mm:ss}", firstReading, lastReading);
-
-                        var newRecords = records.Where(x => x.timestamp > fromDate).ToList();
-
-                        if (newRecords.Any())
+                        if (records.Any())
                         {
-                            Utils.Log("Filtered {0} previously-seen records - storing {1}", records.Count() - newRecords.Count(), newRecords.Count());
+                            var firstReading = records.Min(x => x.timestamp);
+                            var lastReading = records.Max(x => x.timestamp);
+                            Utils.Log("Found readings from {0:dd-MMM-yyyy HH:mm:ss} to {1:dd-MMM-yyyy HH:mm:ss}", firstReading, lastReading);
 
-                            result.AddRange(newRecords);
+                            var newRecords = records.Where(x => x.timestamp > fromDate).ToList();
+
+                            if (newRecords.Any())
+                            {
+                                Utils.Log("Filtered {0} previously-seen records - storing {1}", records.Count() - newRecords.Count(), newRecords.Count());
+
+                                result.AddRange(newRecords);
+                            }
+                            else
+                                Utils.Log("All records were older than high watermark. Ignoring.");
                         }
-                        else
-                            Utils.Log("All records were older than high watermark. Ignoring.");
                     }
                 }
             }
@@ -264,7 +285,9 @@ namespace SensorTagElastic
 
             if (readings.Any())
                 Utils.Log("Found {0} readings for device '{1}' (latest: {2:dd-MMM-yy HH:mm:ss}).", readings.Count(), device.name, readings.Max(x => x.timestamp));
-
+            else
+                Utils.Log("No readings found in data for device '{0}'.", device.name);
+            
             return readings;
         }
 
@@ -272,7 +295,7 @@ namespace SensorTagElastic
         /// Stores the sensor readings.
         /// </summary>
         /// <param name="readings">Readings.</param>
-        private void StoreReadings(ICollection<Reading> readings, string indexName )
+        private void StoreReadings<T>(ICollection<T> readings, string indexName) where T : Reading
         {
             if (readings.Any())
             {
@@ -314,12 +337,11 @@ namespace SensorTagElastic
         /// of less than 1.0, an email is sent warning for all devices.
         /// </summary>
         /// <param name="readings">Readings.</param>
-        private void CheckBatteryStatus(ICollection<Reading> readings, int threshold, List<Alert> alerts)
+        private void CheckBatteryStatus(ICollection<SensorReading> readings, int threshold, List<Alert> alerts)
         {
             Utils.Log("Checking battery status for devices...");
 
-            var lowBatteryDevices = readings.Cast<SensorReading>()
-                                            .Where(x => x.battery < threshold && x.battery > 0.0)
+            var lowBatteryDevices = readings.Where(x => x.battery < threshold && x.battery > 0.0)
                                             .GroupBy(x => x.device,
                                                      y => y.battery,
                                                      (key, b) => new { device = key, lowestBattery = b.Min() })
@@ -336,6 +358,28 @@ namespace SensorTagElastic
                     alerts.Add(new Alert { device = status.device, alertText = msg });
                 }
             }
+        }
+
+
+        private void DeleteWeatherDateRange()
+        {
+            var q = new DateRangeQuery
+            {
+                Name = "named_query",
+                Boost = 1.1,
+                GreaterThanOrEqualTo = DateTime.Now.AddDays(-14),
+                LessThanOrEqualTo = DateTime.Now,
+                Format = "dd/MM/yyyy||yyyy"
+            };
+
+
+            var allDocs = new List<WeatherSummary>();
+
+            ElasticUtils.ScanAllDocs<WeatherSummary>(EsClient, settings.weatherUnderground.IndexName, 
+                                                     "timestamp", (doc, id) => { allDocs.Add(new WeatherSummary { Id = id }); }, q);
+
+            var bulkResponse = EsClient.DeleteMany( allDocs );
+
         }
 
         /// <summary>
@@ -355,17 +399,16 @@ namespace SensorTagElastic
 
             try
             {
-                var weatherReadings = QueryWeatherData( settings.weatherUnderground );
-
-                StoreReadings( weatherReadings, settings.weatherUnderground.IndexName );
+                QueryWeatherData(settings.weatherUnderground);
             }
-            catch( Exception ex )
+            catch (Exception ex)
             {
                 Utils.Log("Exception querying Weather data. {0}", ex);
             }
 
-            List<Reading> allReadings = new List<Reading>();
-            List<SensorDevice> allDevices = new List<SensorDevice>();
+
+            var allReadings = new List<SensorReading>();
+            var allDevices = new List<SensorDevice>();
 
             try
             {
@@ -441,28 +484,51 @@ namespace SensorTagElastic
             Utils.Log("Run complete.");
         }
 
-        private ICollection<Reading> QueryWeatherData(WUGSettings weatherSettings)
+        private void QueryWeatherData(WUGSettings weatherSettings)
         {
             WeatherService weather = new WeatherService(weatherSettings);
-            var allReadings = new List<Reading>();
+            var readings = new List<WeatherReading>();
+            var summaries = new List<WeatherSummary>();
 
-            var mostRecent = getWeatherHighWaterMark();
+            var watermark = getWeatherHighWaterMark();
             var today = DateTime.Now;
             int totalCalls = 0;
+
+            var mostRecent = watermark;
 
             while (mostRecent < today && totalCalls < 200 )
             {
                 Utils.Log("Querying weather for {0}", mostRecent);
 
-                var readings = weather.GetHistory(mostRecent);
-                allReadings.AddRange(readings);
+                if (!weather.GetHistory(mostRecent, readings, summaries))
+                    break;
+
                 totalCalls++;
+
+                mostRecent = mostRecent.AddDays(1);
 
                 // Max of 10 weather calls per minute
                 Thread.Sleep(6 * 1000);
+
+                if( totalCalls % 25 == 0 )
+                {
+                    StoreWeatherReadings(watermark, readings, summaries); 
+                } 
             }
 
-            return allReadings;
+            StoreWeatherReadings(watermark, readings, summaries); 
+        }
+
+        private void StoreWeatherReadings( DateTime watermark, IList<WeatherReading> readings, IList<WeatherSummary> summaries )
+        {
+            var filteredReadings = readings.Where(x => x.timestamp > watermark).ToList();
+            var filteredSummaries = summaries.Where(x => x.timestamp > watermark).ToList();
+
+            StoreReadings<WeatherReading>(filteredReadings, settings.weatherUnderground.IndexName); 
+            StoreReadings<WeatherSummary>(filteredSummaries, settings.weatherUnderground.SummaryIndexName);
+
+            readings.Clear();
+            summaries.Clear();
         }
 
         /// <summary>
@@ -520,6 +586,13 @@ namespace SensorTagElastic
             {
                 Utils.Log("Unable to initialise settings: {0}", ex.Message);                
             }
+        }
+
+        [ElasticsearchType]
+        public class TestObject
+        {
+            public DateTime timestamp { get; set; }
+            public string someValue { get; set; }
         }
     }
 }
