@@ -55,6 +55,17 @@ namespace SensorTagElastic
     }
 
     [DataContract]
+    public class PushSettings
+    {
+        [DataMember]
+        public string applicationKey { get; set; }
+        [DataMember]
+        public string userKey { get; set; }
+        [DataMember]
+        public string alertTitle { get; set; }
+    }
+
+    [DataContract]
     public class HiveSettings
     {
         [DataMember]
@@ -84,7 +95,7 @@ namespace SensorTagElastic
         [DataMember]
         public int refreshPeriodMins { get; set; }
         [DataMember]
-        public int lowBatteryThreshold { get; set; }
+        public double lowBatteryThresholdVolts { get; set; }
         [DataMember]
         public int noDataWarningMins { get; set; }
         [DataMember]
@@ -95,6 +106,8 @@ namespace SensorTagElastic
         public WirelessTagSettings wirelesstag { get; set; }
         [DataMember]
         public EmailSettings email { get; set; }
+        [DataMember]
+        public PushSettings push { get; set; }
         [DataMember]
         public WUGSettings weatherUnderground { get; set; }
     }

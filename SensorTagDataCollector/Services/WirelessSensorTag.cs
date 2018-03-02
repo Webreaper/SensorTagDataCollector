@@ -50,6 +50,8 @@ namespace WirelessSensorTag
         public int slaveId { get; set; }
         public string name { get; set; }
         public string uuid { get; set; }
+        public double batteryVolt { get; set; }
+        public double batteryRemaining { get; set; }
     }
 
     public class TagList

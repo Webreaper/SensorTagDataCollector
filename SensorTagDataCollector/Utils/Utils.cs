@@ -7,6 +7,7 @@ using System.Text;
 using MailKit.Net.Smtp;
 using MimeKit;
 using static SensorTagElastic.MainClass;
+using PushoverClient;
 
 namespace SensorTagElastic
 {
@@ -31,9 +32,9 @@ namespace SensorTagElastic
             Log("Sending email with {0} warnings.", alerts.Count());
 
             string body = "Warnings / notifications for devices:\n";
-            foreach( var alert in alerts.OrderBy( x => x.device.name ) )
+            foreach( var alert in alerts.OrderBy( x => x.deviceName ) )
             {
-                var msg = $" - {alert.device.name}: {alert.alertText}";
+                var msg = $" - {alert.deviceName}: {alert.alertText}";
                 body += msg + "\n";
                 Log(msg);
             }
@@ -90,6 +91,30 @@ namespace SensorTagElastic
             {
                 var serializer = new DataContractJsonSerializer(instance.GetType());
                 return (T)serializer.ReadObject(ms);
+            }
+        }
+
+        internal static void SendPushAlert(PushSettings pushSettings, List<Alert> alerts)
+        {
+            try
+            {
+                
+                var client = new Pushover(pushSettings.applicationKey);
+
+                string body = "Notifications for devices:\n";
+                foreach (var alert in alerts.OrderBy(x => x.deviceName))
+                {
+                    var msg = $" - {alert.deviceName}: {alert.alertText}";
+                    body += msg + "\n";
+                }
+
+                client.Push(pushSettings.alertTitle, body, pushSettings.userKey);
+
+                Log("Push event sent successfully.");
+            }
+            catch( Exception ex )
+            {
+                Log("Exception sending push: {0}", ex.Message);
             }
         }
     }

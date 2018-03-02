@@ -111,7 +111,7 @@ namespace Hive
 
         public bool SignIn(string userName, string pw)
         {
-            bool success = true;
+            bool success = false;
 
             var body = new HiveAuthRequest{ sessions = new List<HiveAuth> { 
                     new HiveAuth{ username = userName, password = pw, caller = "WEB" }}
@@ -120,10 +120,16 @@ namespace Hive
             var data = MakeRestRequest<HiveAuthResponse>("auth/sessions", body);
 
  
-            if (data.sessions.Count > 0)
+            if( data == null || data.sessions == null )
+            {
+                Utils.Log("Hive sign-in failed.");
+                return false;
+            }
+            else if (data.sessions.Count > 0)
             {
                 Utils.Log("Storing sessionID from request");
                 headers.Add(new KeyValuePair<string, string>("X-Omnia-Access-Token", data.sessions[0].sessionId));
+                success = true;
             }
 
             return success;

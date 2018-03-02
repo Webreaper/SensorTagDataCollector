@@ -179,12 +179,18 @@ namespace SensorTagElastic
 
             var searchResponse = client.Search<T>(req);
 
-            if (searchResponse.Documents.Count() > 1)
-                throw new ArgumentOutOfRangeException("More than one record returned from high-watermark");
+            if (searchResponse.IsValid)
+            {
+                if (searchResponse.Documents.Count() > 1)
+                    throw new ArgumentOutOfRangeException("More than one record returned from high-watermark");
 
-            var mostRecent = searchResponse.Documents.FirstOrDefault();
+                var mostRecent = searchResponse.Documents.FirstOrDefault();
 
-            return mostRecent;
+                return mostRecent;
+            }
+
+            Utils.Log("Exception querying ES: {0}", searchResponse.OriginalException.Message);
+            throw new ApplicationException("Invalid ES connection.");
         }
 
         public static void DeleteDuplicates(ElasticClient client, string index)

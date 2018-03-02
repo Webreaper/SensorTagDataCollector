@@ -78,7 +78,7 @@ namespace SensorTagElastic
 
         public class Alert
         {
-            public SensorDevice device { get; set; }
+            public string deviceName { get; set; }
             public string alertText { get; set; }
         }
 
@@ -171,7 +171,7 @@ namespace SensorTagElastic
                     {
                         SensorDevice device = new SensorDevice { uuid = tag.uuid, name = tag.name, type = "Tag", location = "" };
                         allDevices.Add(device);
-                        var records = CreateSensorData(device, data);
+                        var records = CreateSensorData(device, data, tag);
 
                         if (records.Any())
                         {
@@ -200,7 +200,7 @@ namespace SensorTagElastic
         /// <summary>
         /// Queries the data in the sensor tag.
         /// </summary>
-        public ICollection<SensorReading> QueryHiveData(HiveService service, List<SensorDevice> allDevices)
+        public ICollection<SensorReading> QueryHiveData(HiveService service )
         {
 
             List<SensorReading> readings = new List<SensorReading>();
@@ -211,8 +211,7 @@ namespace SensorTagElastic
             var fromDate = getDeviceHighWaterMark(hiveTempChannel.UUID);
             var toDate = DateTime.UtcNow;
 
-            SensorDevice device = new SensorDevice { uuid = hiveTempChannel.UUID, name = "Hive", type = "HiveHome", location = "" };
-            allDevices.Add(device);
+            var device = new SensorDevice { uuid = hiveTempChannel.UUID, name = "Hive", type = "HiveHome", location = "" };
 
             Utils.Log("Querying hive {0} data between {1} and {2}...", hiveTempChannel.id, fromDate, toDate);
 
@@ -262,15 +261,24 @@ namespace SensorTagElastic
         /// </summary>
         /// <param name="device">Device.</param>
         /// <param name="data">Data.</param>
-        private ICollection<SensorReading> CreateSensorData(SensorDevice device, RawTempData data)
+        private ICollection<SensorReading> CreateSensorData(SensorDevice device, RawTempData data, TagInfo tag)
         {
             Utils.Log("Processing {0} data points...", data.d.Count());
-            const double maxBatteryPercent = 3.0 / 100.0;
 
             List<SensorReading> readings = new List<SensorReading>();
 
             foreach (var datapoint in data.d)
             {
+                int? battPercent = null;
+
+                // The battery info from the Tag will be for right now (i.e., when we 
+                // queried it). So only use it to fill in the battery percentage for 
+                // data points in the last 24 hours.
+                if( Math.Abs(DateTime.Now.Subtract(datapoint.time).Hours) <= 24 )
+                {
+                    battPercent = (int)(tag.batteryRemaining * 100);
+                }
+
                 readings.Add(new SensorReading
                 {
                     timestamp = datapoint.time,
@@ -279,7 +287,7 @@ namespace SensorTagElastic
                     lux = datapoint.lux,
                     humidity = datapoint.cap,
                     battery = datapoint.battery_volts,
-                    batteryPercentage = (int)(datapoint.battery_volts / maxBatteryPercent)
+                    batteryPercentage = battPercent
                 });
             }
 
@@ -337,9 +345,9 @@ namespace SensorTagElastic
         /// of less than 1.0, an email is sent warning for all devices.
         /// </summary>
         /// <param name="readings">Readings.</param>
-        private void CheckBatteryStatus(ICollection<SensorReading> readings, int threshold, List<Alert> alerts)
+        private void CheckBatteryStatus(ICollection<SensorReading> readings, double threshold, List<Alert> alerts)
         {
-            Utils.Log("Checking battery status for devices...");
+            Utils.Log("Checking battery status for devices lower than {0}v...", threshold);
 
             var lowBatteryDevices = readings.Where(x => x.battery < threshold && x.battery > 0.0)
                                             .GroupBy(x => x.device,
@@ -349,13 +357,11 @@ namespace SensorTagElastic
 
             if (lowBatteryDevices.Any())
             {
-                string msg = "Warning. One or more devices are indicating a low battery status.\n\n";
-
                 foreach (var status in lowBatteryDevices)
                 {
                     var lastReading = readings.Max(x => x.timestamp);
-                    msg += string.Format($"Low Battery - {status.lowestBattery}v (last reading: {1:dd-MMM-yyyy HH:mm:ss}\n", status.lowestBattery, lastReading);
-                    alerts.Add(new Alert { device = status.device, alertText = msg });
+                    var msg = $"Low Battery - {status.lowestBattery}v (last reading: {lastReading:dd-MMM-yyyy HH:mm:ss})\n";
+                    alerts.Add(new Alert { deviceName = status.device.name, alertText = msg });
                 }
             }
         }
@@ -396,6 +402,7 @@ namespace SensorTagElastic
             }.Uri;
 
             EsClient = ElasticUtils.getElasticClient(esPath, settings.indexname, false);
+            List<Alert> alerts = new List<Alert>();
 
             try
             {
@@ -419,10 +426,12 @@ namespace SensorTagElastic
                     if (service.SignIn(settings.hive.username, settings.hive.password))
                     {
 
-                        var hiveReadings = QueryHiveData(service, allDevices);
+                        var hiveReadings = QueryHiveData(service);
 
                         allReadings.AddRange(hiveReadings);
                     }
+                    else
+                        alerts.Add( new Alert { deviceName = "Hive", alertText = "Sign-in failed."});
                 }
             }
             catch( Exception ex )
@@ -442,6 +451,8 @@ namespace SensorTagElastic
 
                         allReadings.AddRange(wirelessTagReadings);
                     }
+                    else
+                        alerts.Add(new Alert { deviceName = "Wireless Tags", alertText = "Sign-in failed." });
                 }
             }
             catch (Exception ex)
@@ -449,36 +460,40 @@ namespace SensorTagElastic
                 Utils.Log("Exception querying SensorTag data. {0}", ex);
             }
 
-            if( allReadings.Any() && settings.email != null )
+            if( allReadings.Any() )
             {
                 try
                 {
                     StoreReadings(allReadings, settings.indexname);
-
-                    ElasticUtils.DeleteDuplicates(EsClient, settings.indexname);
                 }
                 catch (Exception ex)
                 {
                     Utils.Log("Exception ingesting data in ES. {0}", ex);
                 }
+            
+                // See if any of the data we got back indicated a drained battery.
+                CheckBatteryStatus(allReadings, settings.lowBatteryThresholdVolts, alerts);
+            }
 
-                try
+            try
+            {
+                // Now check for any missing data - i.e., long gaps since we last saw anything
+                CheckMissingData(allDevices, alerts);
+
+                // And send any alerts we saw.
+                if (alerts.Any())
                 {
-                    List<Alert> alerts = new List<Alert>();
+                    Utils.Log("Sending {0} alerts.", alerts.Count);
 
-                    // See if any of the data we got back indicated a drained battery.
-                    CheckBatteryStatus(allReadings, settings.lowBatteryThreshold, alerts);
-                    CheckMissingData(allDevices, alerts);
-
-                    if (alerts.Any())
-                    {
+                    if (settings.email != null)
                         Utils.SendAlertEmail(settings.email, alerts);
-                    }
+                    if (settings.push != null)
+                        Utils.SendPushAlert(settings.push, alerts);
                 }
-                catch( Exception ex )
-                {
-                    Utils.Log("Exception checking missing data. {0}", ex);
-                }
+            }
+            catch (Exception ex)
+            {
+                Utils.Log("Exception checking missing data. {0}", ex);
             }
 
             Utils.Log("Run complete.");
@@ -547,7 +562,7 @@ namespace SensorTagElastic
                 Utils.Log("Device {0} was updated {1} minutes ago. ", device.name, minsSinceLastReading);
                 if (minsSinceLastReading > settings.noDataWarningMins)
                 {
-                    alerts.Add(new Alert { device = device, alertText = $"No data for {minsSinceLastReading} minutes." });
+                    alerts.Add(new Alert { deviceName = device.name, alertText = $"No data for {minsSinceLastReading} minutes." });
                 }
             }
         }
