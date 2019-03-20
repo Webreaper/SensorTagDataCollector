@@ -8,6 +8,8 @@ using MailKit.Net.Smtp;
 using MimeKit;
 using static SensorTagElastic.MainClass;
 using PushoverClient;
+using log4net.Repository.Hierarchy;
+using SensorTagDataCollector.Logging;
 
 namespace SensorTagElastic
 {
@@ -66,22 +68,13 @@ namespace SensorTagElastic
             }
             catch( Exception ex )
             {
-                Log("Exception sending emai: {0}", ex.Message);  
+                Log("Exception sending email: {0}", ex.Message);  
             }
         }
 
-        public static string logLocation = string.Empty;
-
         public static void Log(string format, params object[] args)
         {
-            string msg = string.Format(format, args);
-            string log = string.Format("[{0:yyyy-MM-dd HH:mm:ss}] {1}", DateTime.UtcNow, msg);
-            Console.WriteLine(log);
-
-            if( !string.IsNullOrEmpty(logLocation) )
-            {
-                File.AppendAllLines(logLocation, new[] { log } );
-            }
+            LogHandler.LogInstance().InfoFormat(format, args);
         }
 
         public static T deserializeJSON<T>(string json)

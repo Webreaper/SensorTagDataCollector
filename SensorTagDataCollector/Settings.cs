@@ -97,6 +97,8 @@ namespace SensorTagElastic
         [DataMember]
         public double lowBatteryThresholdVolts { get; set; }
         [DataMember]
+        public int lowBatteryThresholdPercent { get; set; }
+        [DataMember]
         public int noDataWarningMins { get; set; }
         [DataMember]
         public string logLocation { get; set; }

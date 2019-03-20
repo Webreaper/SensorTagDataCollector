@@ -7,6 +7,7 @@ using System.IO;
 using System.Threading;
 using Hive;
 using Weather;
+using SensorTagDataCollector.Logging;
 
 namespace SensorTagElastic
 {
@@ -244,7 +245,7 @@ namespace SensorTagElastic
                     Utils.Log("Found {0} readings for device '{1}' (latest: {2:dd-MMM-yy HH:mm:ss}).", readings.Count(), device.name, readings.Max(x => x.timestamp));
                 }
                 else
-                    Utils.Log("No readings found for device {1}.", device.name);
+                    Utils.Log("No readings found for device {0}.", device.name);
 
                 // Now query the current battery level, and set it in the most recent reading.
                 lastReading.batteryPercentage = service.QueryHiveBattery();
@@ -339,17 +340,39 @@ namespace SensorTagElastic
                 Utils.Log("No readings to ingest.");
         }
 
+        private static bool DeviceHasLowBattery( SensorReading reading, Settings settings )
+        {
+            bool lowBattery = false;
+
+            if(settings.lowBatteryThresholdPercent == 0 && reading.battery.HasValue )
+            {
+                // Check for low battery by voltagee
+                if ( reading.device.type != "HiveHome" && reading.battery > 0.0 )
+                {
+                    lowBattery = reading.battery < settings.lowBatteryThresholdVolts;
+                }
+            }
+            else if( reading.batteryPercentage.HasValue )
+            {
+                // Check for low battery via percentage
+                if (reading.batteryPercentage < settings.lowBatteryThresholdPercent)
+                    lowBattery = true;
+            }
+
+            return lowBattery;
+        }
+
         /// <summary>
         /// Analyses the battery levels for all devices and pulls out the lowest battery 
         /// reading in the batch of sensor readings. If any devices have a battery level
         /// of less than 1.0, an email is sent warning for all devices.
         /// </summary>
         /// <param name="readings">Readings.</param>
-        private void CheckBatteryStatus(ICollection<SensorReading> readings, double threshold, List<Alert> alerts)
+        private void CheckBatteryStatus(ICollection<SensorReading> readings, Settings batterySettings, List<Alert> alerts)
         {
-            Utils.Log("Checking battery status for devices lower than {0}v...", threshold);
+            Utils.Log("Checking battery status for devices...");
 
-            var lowBatteryDevices = readings.Where(x => x.battery < threshold && x.battery > 0.0)
+            var lowBatteryDevices = readings.Where(x => DeviceHasLowBattery( x, batterySettings ) )
                                             .GroupBy(x => x.device,
                                                      y => y.battery,
                                                      (key, b) => new { device = key, lowestBattery = b.Min() })
@@ -472,7 +495,7 @@ namespace SensorTagElastic
                 }
             
                 // See if any of the data we got back indicated a drained battery.
-                CheckBatteryStatus(allReadings, settings.lowBatteryThresholdVolts, alerts);
+                CheckBatteryStatus(allReadings, settings, alerts);
             }
 
             try
@@ -582,7 +605,7 @@ namespace SensorTagElastic
 
                 var settings = Utils.deserializeJSON<Settings>(json);
 
-                Utils.logLocation = settings.logLocation;
+                LogHandler.LogSetup( settings.logLocation );
                 bool loop = settings.refreshPeriodMins > 0;
 
                 do{
