@@ -623,12 +623,5 @@ namespace SensorTagElastic
                 Utils.Log("Unable to initialise settings: {0}", ex.Message);                
             }
         }
-
-        [ElasticsearchType]
-        public class TestObject
-        {
-            public DateTime timestamp { get; set; }
-            public string someValue { get; set; }
-        }
     }
 }
