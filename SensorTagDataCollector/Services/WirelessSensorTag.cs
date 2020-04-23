@@ -64,7 +64,7 @@ namespace WirelessSensorTag
         private const string CookieWTAG = "WTAG";
         private ServerCertificateValidation certValidation = new ServerCertificateValidation();
         private readonly RestClient wstclient;
-        private IList<RestResponseCookie> cookies = null;
+        private IList<HttpCookie> cookies = null;
 
         public WirelessSensorTagAPI( string url )
         {
@@ -119,7 +119,7 @@ namespace WirelessSensorTag
                         if (cookies == null )
                         {
                             Utils.Log("Storing cookies from Auth request: {0}", requestMethod);
-                            cookies = queryResult.Cookies;
+                            cookies = (IList<HttpCookie>)queryResult.Cookies;
                         }
                     }
                 }

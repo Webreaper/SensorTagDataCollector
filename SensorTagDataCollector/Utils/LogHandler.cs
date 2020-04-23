@@ -1,56 +1,75 @@
-﻿using System;
-using log4net;
-using log4net.Appender;
-using log4net.Core;
-using log4net.Layout;
-using log4net.Repository.Hierarchy;
+﻿using Serilog;
+using Serilog.Core;
+using Serilog.Events;
 
-namespace SensorTagDataCollector.Logging
+namespace Logging
 {
     public static class LogHandler
     {
-        public static string logLocation = string.Empty;
+        public static bool Verbose { get; set; } = false;
+        public static bool Trace { get; set; } = false;
+        private static Logger logger;
+        private static LoggingLevelSwitch logLevel = new LoggingLevelSwitch();
+        private const string template = "[{Timestamp:HH:mm:ss.fff}-{ThreadID}-{Level:u3}] {Message:lj}{NewLine}{Exception}";
+        public static Logger Logger { get; }
 
-        public static void LogSetup(string fileName)
+        public static Logger InitLogs( string logLocation )
         {
-            Hierarchy hierarchy = (Hierarchy)log4net.LogManager.GetRepository();
+            logLevel.MinimumLevel = Serilog.Events.LogEventLevel.Information;
 
-            PatternLayout patternLayout = new PatternLayout();
-            patternLayout.ConversionPattern = "%date [%thread] %-5level %logger - %message%newline";
-            patternLayout.ActivateOptions();
+            if (Verbose)
+                logLevel.MinimumLevel = Serilog.Events.LogEventLevel.Verbose;
 
-            RollingFileAppender roller = new RollingFileAppender();
-            roller.AppendToFile = true;
-            roller.File = fileName;
-            roller.Layout = patternLayout;
-            roller.MaxSizeRollBackups = 3;
-            roller.MaxFileSize = 10000000;
-            roller.RollingStyle = RollingFileAppender.RollingMode.Size;
-            roller.StaticLogFileName = true;
-            roller.ActivateOptions();
+            if (Trace)
+                logLevel.MinimumLevel = Serilog.Events.LogEventLevel.Debug;
 
-            ConsoleAppender console = new ConsoleAppender();
-            console.Layout = patternLayout;
-            console.ActivateOptions();
+            logger = new LoggerConfiguration()
+                .MinimumLevel.ControlledBy(logLevel)
+                .WriteTo.Console(outputTemplate: template)
+                .WriteTo.File("QbtCleanup-.log", outputTemplate: template,
+                               rollingInterval: RollingInterval.Day,
+                               fileSizeLimitBytes: 104857600)
+                .CreateLogger();
 
-            hierarchy.Root.AddAppender(console);
-            hierarchy.Root.AddAppender(roller);
-            hierarchy.Root.Level = Level.Info;
-            hierarchy.Configured = true;
+            logger.Information("=== SensorTagCollector Log Started ===");
+            logger.Information("LogLevel: {0}", logLevel.MinimumLevel);
 
-            m_logInstance = LogManager.GetLogger("SensorTagCollector");
+            return logger;
         }
 
-        private static ILog m_logInstance;
-
-        public static ILog LogInstance() 
+        public static void EnableDebugLogging(bool enable)
         {
-            if(m_logInstance == null )
-            {
-                throw new SystemException("Logging was not initialised.");
-            }
+            if (enable)
+                logLevel.MinimumLevel = Serilog.Events.LogEventLevel.Debug;
+            else
+                logLevel.MinimumLevel = Serilog.Events.LogEventLevel.Verbose;
 
-            return m_logInstance;
-        } 
+            logger.Information("LogLevel: {0}", logLevel.MinimumLevel);
+        }
+
+        public static void LogError(string fmt, params object[] args)
+        {
+            logger.Error(fmt, args);
+        }
+
+        public static void LogWarning(string fmt, params object[] args)
+        {
+            logger.Warning(fmt, args);
+        }
+
+        public static void LogVerbose(string fmt, params object[] args)
+        {
+            logger.Verbose(fmt, args);
+        }
+
+        public static void LogTrace(string fmt, params object[] args)
+        {
+            logger.Debug(fmt, args);
+        }
+
+        public static void Log(string fmt, params object[] args)
+        {
+            logger.Information(fmt, args);
+        }
     }
 }

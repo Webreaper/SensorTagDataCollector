@@ -53,18 +53,7 @@ namespace SensorTagElastic
         [DataMember]
         public string toname { get; set; }
     }
-
-    [DataContract]
-    public class PushSettings
-    {
-        [DataMember]
-        public string applicationKey { get; set; }
-        [DataMember]
-        public string userKey { get; set; }
-        [DataMember]
-        public string alertTitle { get; set; }
-    }
-
+  
     [DataContract]
     public class HiveSettings
     {
@@ -108,8 +97,6 @@ namespace SensorTagElastic
         public WirelessTagSettings wirelesstag { get; set; }
         [DataMember]
         public EmailSettings email { get; set; }
-        [DataMember]
-        public PushSettings push { get; set; }
         [DataMember]
         public WUGSettings weatherUnderground { get; set; }
     }

@@ -23,7 +23,7 @@ namespace SensorTagElastic
             {
                 Utils.Log("Deleting indices: {0}-*...", indexName);
 
-                esClient.DeleteIndex(indexName + "-*");
+                esClient.Indices.Delete(indexName + "-*");
 
                 Utils.Log("Deletion complete.");
             }
@@ -63,7 +63,6 @@ namespace SensorTagElastic
 
                 var bulkAll = client.BulkAll(items, b => b
                                                .Index( index.ToLower() )
-                                               .Type(typeName)
                                                .BackOffRetries(2)
                                                .BackOffTime("10s")
                                                .RefreshOnCompleted(true)
@@ -94,8 +93,8 @@ namespace SensorTagElastic
             Utils.Log("Creating aliases for index {0}-*...", indexName);
 
             //create the alias
-            esClient.Alias(a => a
-                .Add(add => add
+            esClient.Indices.BulkAlias( aliases => 
+                aliases.Add(add => add
                      .Index(indexName + "-*")
                      .Alias(indexName)
                 )
@@ -125,7 +124,7 @@ namespace SensorTagElastic
                 From = 0,
                 Size = scrollPageSize,
                 Query = query,
-                Sort = new List<ISort> { new SortField { Field = sortField, Order = SortOrder.Ascending } },
+                Sort = new List<ISort> { new FieldSort { Field = sortField, Order = SortOrder.Ascending } },
                 Scroll = scrollTTLMins
             };
 
@@ -162,19 +161,12 @@ namespace SensorTagElastic
             if (query == null)
                 query = new MatchAllQuery();
 
-            var typeQuery = new TypeQuery
-            {
-                Name = "named_query",
-                Boost = 1.1,
-                Value = typeof( T ).Name
-            };
-
             var req = new SearchRequest(indexName)
             {
                 From = 0,
                 Size = 1,
-                Query = query && typeQuery,
-                Sort = new List<ISort> { new SortField { Field = "timestamp", Order = SortOrder.Descending } }
+                Query = query,
+                Sort = new List<ISort> { new FieldSort { Field = "timestamp", Order = SortOrder.Descending } }
             };
 
             var searchResponse = client.Search<T>(req);

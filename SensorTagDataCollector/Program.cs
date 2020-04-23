@@ -7,7 +7,7 @@ using System.IO;
 using System.Threading;
 using Hive;
 using Weather;
-using SensorTagDataCollector.Logging;
+using Logging;
 
 namespace SensorTagElastic
 {
@@ -136,7 +136,7 @@ namespace SensorTagElastic
         {
             Utils.Log("Getting high water mark for weather...");
 
-            var mostRecent = ElasticUtils.getHighWaterMark<WeatherSummary>(EsClient, settings.weatherUnderground.IndexName, null);
+            var mostRecent = ElasticUtils.getHighWaterMark<WeatherSummary>(EsClient, settings.weatherUnderground.SummaryIndexName, null);
 
             if (mostRecent != null)
             {
@@ -510,8 +510,6 @@ namespace SensorTagElastic
 
                     if (settings.email != null)
                         Utils.SendAlertEmail(settings.email, alerts);
-                    if (settings.push != null)
-                        Utils.SendPushAlert(settings.push, alerts);
                 }
             }
             catch (Exception ex)
@@ -605,7 +603,7 @@ namespace SensorTagElastic
 
                 var settings = Utils.deserializeJSON<Settings>(json);
 
-                LogHandler.LogSetup( settings.logLocation );
+                LogHandler.InitLogs( settings.logLocation );
                 bool loop = settings.refreshPeriodMins > 0;
 
                 do{

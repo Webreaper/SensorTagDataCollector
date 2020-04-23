@@ -7,9 +7,7 @@ using System.Text;
 using MailKit.Net.Smtp;
 using MimeKit;
 using static SensorTagElastic.MainClass;
-using PushoverClient;
-using log4net.Repository.Hierarchy;
-using SensorTagDataCollector.Logging;
+using Logging;
 
 namespace SensorTagElastic
 {
@@ -74,7 +72,7 @@ namespace SensorTagElastic
 
         public static void Log(string format, params object[] args)
         {
-            LogHandler.LogInstance().InfoFormat(format, args);
+            LogHandler.Log(format, args);
         }
 
         public static T deserializeJSON<T>(string json)
@@ -84,30 +82,6 @@ namespace SensorTagElastic
             {
                 var serializer = new DataContractJsonSerializer(instance.GetType());
                 return (T)serializer.ReadObject(ms);
-            }
-        }
-
-        internal static void SendPushAlert(PushSettings pushSettings, List<Alert> alerts)
-        {
-            try
-            {
-                
-                var client = new Pushover(pushSettings.applicationKey);
-
-                string body = "Notifications for devices:\n";
-                foreach (var alert in alerts.OrderBy(x => x.deviceName))
-                {
-                    var msg = $" - {alert.deviceName}: {alert.alertText}";
-                    body += msg + "\n";
-                }
-
-                client.Push(pushSettings.alertTitle, body, pushSettings.userKey);
-
-                Log("Push event sent successfully.");
-            }
-            catch( Exception ex )
-            {
-                Log("Exception sending push: {0}", ex.Message);
             }
         }
     }
