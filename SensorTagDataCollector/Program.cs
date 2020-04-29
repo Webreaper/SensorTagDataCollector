@@ -163,6 +163,10 @@ namespace SensorTagElastic
                     var fromDate = getDeviceHighWaterMark(tag.uuid);
                     var toDate = DateTime.UtcNow;
 
+                    // Limit to 90 days at a time
+                    if ((toDate - fromDate).TotalDays > 90)
+                        toDate = fromDate.AddDays(90);
+
                     Utils.Log("Querying {0} data between {1} and {2}...", tag.name, fromDate, toDate);
 
                     var body = new { id = tag.slaveId, fromDate, toDate };
@@ -212,12 +216,18 @@ namespace SensorTagElastic
             var fromDate = getDeviceHighWaterMark(hiveTempChannel.UUID);
             var toDate = DateTime.UtcNow;
 
+//            if ((toDate - fromDate).TotalDays > 90)
+//                toDate = fromDate.AddDays(90);
+
             var device = new SensorDevice { uuid = hiveTempChannel.UUID, name = "Hive", type = "HiveHome", location = "" };
 
             Utils.Log("Querying hive {0} data between {1} and {2}...", hiveTempChannel.id, fromDate, toDate);
 
             var values = service.QueryHiveValues(hiveTempChannel, device, fromDate, toDate, settings.refreshPeriodMins);
-            var battValues = service.QueryHiveValues(hiveBattChannel, device, fromDate, toDate, settings.refreshPeriodMins);
+
+            var battValues = new Dictionary<long, double>();
+            if( hiveBattChannel != null )
+                battValues = service.QueryHiveValues(hiveBattChannel, device, fromDate, toDate, settings.refreshPeriodMins);
 
             if (values.Any())
             {
@@ -425,42 +435,9 @@ namespace SensorTagElastic
             }.Uri;
 
             EsClient = ElasticUtils.getElasticClient(esPath, settings.indexname, false);
-            List<Alert> alerts = new List<Alert>();
-
-            try
-            {
-                QueryWeatherData(settings.weatherUnderground);
-            }
-            catch (Exception ex)
-            {
-                Utils.Log("Exception querying Weather data. {0}", ex);
-            }
-
-
+            var alerts = new List<Alert>();
             var allReadings = new List<SensorReading>();
             var allDevices = new List<SensorDevice>();
-
-            try
-            {
-                if (settings.hive != null)
-                {
-                    HiveService service = new HiveService();
-
-                    if (service.SignIn(settings.hive.username, settings.hive.password))
-                    {
-
-                        var hiveReadings = QueryHiveData(service);
-
-                        allReadings.AddRange(hiveReadings);
-                    }
-                    else
-                        alerts.Add( new Alert { deviceName = "Hive", alertText = "Sign-in failed."});
-                }
-            }
-            catch( Exception ex )
-            {
-                Utils.Log( "Exception querying Hive data. {0}", ex);
-            }
 
             try
             {
@@ -483,7 +460,10 @@ namespace SensorTagElastic
                 Utils.Log("Exception querying SensorTag data. {0}", ex);
             }
 
-            if( allReadings.Any() )
+            QueryHiveData(allReadings, alerts);
+            QueryWeatherData(settings.weatherUnderground);
+
+            if (allReadings.Any())
             {
                 try
                 {
@@ -520,39 +500,71 @@ namespace SensorTagElastic
             Utils.Log("Run complete.");
         }
 
+        private void QueryHiveData(List<SensorReading> readings, List<Alert> alerts )
+        {
+            try
+            {
+                if (settings.hive != null)
+                {
+                    HiveService service = new HiveService();
+
+                    if (service.SignIn(settings.hive.username, settings.hive.password))
+                    {
+
+                        var hiveReadings = QueryHiveData(service);
+
+                        readings.AddRange(hiveReadings);
+                    }
+                    else
+                        alerts.Add(new Alert { deviceName = "Hive", alertText = "Sign-in failed." });
+                }
+            }
+            catch (Exception ex)
+            {
+                Utils.Log("Exception querying Hive data. {0}", ex);
+            }
+        }
+
         private void QueryWeatherData(WUGSettings weatherSettings)
         {
-            WeatherService weather = new WeatherService(weatherSettings);
-            var readings = new List<WeatherReading>();
-            var summaries = new List<WeatherSummary>();
-
-            var watermark = getWeatherHighWaterMark();
-            var today = DateTime.Now;
-            int totalCalls = 0;
-
-            var mostRecent = watermark;
-
-            while (mostRecent < today && totalCalls < 200 )
+            try
             {
-                Utils.Log("Querying weather for {0}", mostRecent);
+                WeatherService weather = new WeatherService(weatherSettings);
+                var readings = new List<WeatherReading>();
+                var summaries = new List<WeatherSummary>();
 
-                if (!weather.GetHistory(mostRecent, readings, summaries))
-                    break;
+                var watermark = getWeatherHighWaterMark();
+                var today = DateTime.Now;
+                int totalCalls = 0;
 
-                totalCalls++;
+                var mostRecent = watermark;
 
-                mostRecent = mostRecent.AddDays(1);
-
-                // Max of 10 weather calls per minute
-                Thread.Sleep(6 * 1000);
-
-                if( totalCalls % 25 == 0 )
+                while (mostRecent < today && totalCalls < 200)
                 {
-                    StoreWeatherReadings(watermark, readings, summaries); 
-                } 
-            }
+                    Utils.Log("Querying weather for {0}", mostRecent);
 
-            StoreWeatherReadings(watermark, readings, summaries); 
+                    if (!weather.GetHistory(mostRecent, readings, summaries))
+                        break;
+
+                    totalCalls++;
+
+                    mostRecent = mostRecent.AddDays(1);
+
+                    // Max of 10 weather calls per minute
+                    Thread.Sleep(6 * 1000);
+
+                    if (totalCalls % 25 == 0)
+                    {
+                        StoreWeatherReadings(watermark, readings, summaries);
+                    }
+                }
+
+                StoreWeatherReadings(watermark, readings, summaries);
+            }
+            catch( Exception ex )
+            {
+                Utils.Log("Exception querying Weather data. {0}", ex);
+            }
         }
 
         private void StoreWeatherReadings( DateTime watermark, IList<WeatherReading> readings, IList<WeatherSummary> summaries )

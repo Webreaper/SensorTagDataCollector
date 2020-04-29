@@ -13,7 +13,7 @@ namespace WirelessSensorTag
         public string uuid { get; set; }
         public DateTime fromDate { get; set; }
         public DateTime toDate { get; set; }
-        public string name { get; set;  }
+        public string name { get; set; }
     }
 
 
@@ -64,9 +64,9 @@ namespace WirelessSensorTag
         private const string CookieWTAG = "WTAG";
         private ServerCertificateValidation certValidation = new ServerCertificateValidation();
         private readonly RestClient wstclient;
-        private IList<HttpCookie> cookies = null;
+        private IList<RestResponseCookie> cookies = null;
 
-        public WirelessSensorTagAPI( string url )
+        public WirelessSensorTagAPI(string url)
         {
             wstclient = new RestClient(url);
         }
@@ -94,11 +94,11 @@ namespace WirelessSensorTag
         public T MakeRestRequest<T>(string requestMethod, object requestBody) where T : new()
         {
             var request = new RestRequest(requestMethod, Method.POST);
-            if( requestBody != null )
+            if (requestBody != null)
                 request.AddJsonBody(requestBody);
 
-            if( cookies != null )
-                request.AddCookie( cookies[0].Name, cookies[0].Value );
+            if (cookies != null)
+                request.AddCookie(cookies[0].Name, cookies[0].Value);
 
             T data = default(T);
 
@@ -116,10 +116,10 @@ namespace WirelessSensorTag
                     {
                         data = queryResult.Data;
 
-                        if (cookies == null )
+                        if (cookies == null)
                         {
                             Utils.Log("Storing cookies from Auth request: {0}", requestMethod);
-                            cookies = (IList<HttpCookie>)queryResult.Cookies;
+                            cookies = (IList<RestResponseCookie>)queryResult.Cookies;
                         }
                     }
                 }
@@ -130,7 +130,7 @@ namespace WirelessSensorTag
             {
                 Utils.Log("Exception: {0}: {1}", ex.Message, ex);
             }
- 
+
             return data;
         }
     }

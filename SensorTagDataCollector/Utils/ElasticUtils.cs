@@ -181,8 +181,11 @@ namespace SensorTagElastic
                 return mostRecent;
             }
 
-            Utils.Log("Exception querying ES: {0}", searchResponse.OriginalException.Message);
-            throw new ApplicationException("Invalid ES connection.");
+            if( searchResponse.OriginalException != null )
+                Utils.Log("Exception querying ES for watermark: {0}", searchResponse.OriginalException.Message);
+            else
+                Utils.Log("Error querying ES for watermark: {0}", searchResponse);
+            return null;
         }
 
         public static void DeleteDuplicates(ElasticClient client, string index)
