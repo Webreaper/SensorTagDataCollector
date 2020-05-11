@@ -107,7 +107,7 @@ namespace SensorTagElastic
                 return mostRecent.timestamp.AddSeconds(1);
             }
 
-            return new DateTime(2017, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            return new DateTime(2017, 9, 1, 0, 0, 0, DateTimeKind.Utc);
         }
 
         /// <summary>
@@ -196,6 +196,10 @@ namespace SensorTagElastic
                                 Utils.Log("All records were older than high watermark. Ignoring.");
                         }
                     }
+
+                    // Throttle to ensure we don't hit the sensortag server too hard.
+                    Utils.Log("Sleeping for 15s to throttle requests.");
+                    Thread.Sleep(15 * 1000);
                 }
             }
 
@@ -274,32 +278,37 @@ namespace SensorTagElastic
         /// <param name="data">Data.</param>
         private ICollection<SensorReading> CreateSensorData(SensorDevice device, RawTempData data, TagInfo tag)
         {
-            Utils.Log("Processing {0} data points...", data.d.Count());
-
             List<SensorReading> readings = new List<SensorReading>();
 
-            foreach (var datapoint in data.d)
+            if (data.d.Any())
             {
-                int? battPercent = null;
 
-                // The battery info from the Tag will be for right now (i.e., when we 
-                // queried it). So only use it to fill in the battery percentage for 
-                // data points in the last 24 hours.
-                if( Math.Abs(DateTime.Now.Subtract(datapoint.time).Hours) <= 24 )
+                Utils.Log("Processing {0} data points...", data.d.Count());
+
+
+                foreach (var datapoint in data.d)
                 {
-                    battPercent = (int)(tag.batteryRemaining * 100);
+                    int? battPercent = null;
+
+                    // The battery info from the Tag will be for right now (i.e., when we 
+                    // queried it). So only use it to fill in the battery percentage for 
+                    // data points in the last 24 hours.
+                    if (Math.Abs(DateTime.Now.Subtract(datapoint.time).Hours) <= 24)
+                    {
+                        battPercent = (int)(tag.batteryRemaining * 100);
+                    }
+
+                    readings.Add(new SensorReading
+                    {
+                        timestamp = datapoint.time,
+                        device = device,
+                        temperature = datapoint.temp_degC,
+                        lux = datapoint.lux,
+                        humidity = datapoint.cap,
+                        battery = datapoint.battery_volts,
+                        batteryPercentage = battPercent
+                    });
                 }
-
-                readings.Add(new SensorReading
-                {
-                    timestamp = datapoint.time,
-                    device = device,
-                    temperature = datapoint.temp_degC,
-                    lux = datapoint.lux,
-                    humidity = datapoint.cap,
-                    battery = datapoint.battery_volts,
-                    batteryPercentage = battPercent
-                });
             }
 
             if (readings.Any())
