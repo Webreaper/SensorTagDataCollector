@@ -338,18 +338,13 @@ namespace SensorTagElastic
                                             new { year, values = values.OrderBy(x => x.timestamp).ToList() })
                                     .ToList();
 
-                var now = DateTime.UtcNow;
-
                 foreach (var kvp in years)
                 {
                     if (kvp.values.Any())
                     {
                         string yearIndex = string.Format("{0}-{1}", indexName, kvp.year);
 
-                        foreach (var x in kvp.values)
-                            x.ingestionTimeStamp = now;
-                        
-                        ElasticUtils.BulkInsert(EsClient, yearIndex, kvp.values);
+                        InsertInBatches(kvp.values, 300, yearIndex);
                     }
                 }
 
@@ -357,6 +352,31 @@ namespace SensorTagElastic
             }
             else
                 Utils.Log("No readings to ingest.");
+        }
+
+        /// <summary>
+        /// Split the list into sub-lists of batch size, and insert
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="items"></param>
+        /// <param name="batchSize"></param>
+        /// <param name="index"></param>
+        private void InsertInBatches<T>(List<T> items, int batchSize, string index ) where T : Reading
+        {
+            while (items.Any())
+            {
+                var toStore = items.Take(batchSize).ToList();
+
+                var now = DateTime.UtcNow;
+
+                foreach (var x in toStore)
+                    x.ingestionTimeStamp = now;
+
+                Utils.Log($"Bulk inserting {batchSize} records of {items.Count()}");
+                ElasticUtils.BulkInsert(EsClient, index, toStore);
+
+                items = items.Skip(batchSize).ToList();
+            }
         }
 
         private static bool DeviceHasLowBattery( SensorReading reading, Settings settings )
