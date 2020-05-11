@@ -160,12 +160,13 @@ namespace SensorTagElastic
             {
                 foreach (var tag in tagList.d)
                 {
+                    int dateRangeForBatch = 90;
                     var fromDate = getDeviceHighWaterMark(tag.uuid);
                     var toDate = DateTime.UtcNow;
 
                     // Limit to 90 days at a time
-                    if ((toDate - fromDate).TotalDays > 90)
-                        toDate = fromDate.AddDays(90);
+                    if ((toDate - fromDate).TotalDays > dateRangeForBatch)
+                        toDate = fromDate.AddDays(dateRangeForBatch);
 
                     Utils.Log("Querying {0} data between {1} and {2}...", tag.name, fromDate, toDate);
 
@@ -456,6 +457,7 @@ namespace SensorTagElastic
         /// <param name="settings">Settings.</param>
         public void ProcessTags(Settings settings)
         {
+
             this.settings = settings;
             Uri esPath = new UriBuilder
             {
@@ -648,6 +650,8 @@ namespace SensorTagElastic
                 bool loop = settings.refreshPeriodMins > 0;
 
                 do{
+                    Utils.Log("======== Beginning tag processing.... ========");
+
                     x.ProcessTags(settings);
 
                     if( loop )
