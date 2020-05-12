@@ -8,7 +8,7 @@ using static SensorTagElastic.MainClass;
 
 namespace SensorTagElastic
 {
-    public class ElasticUtils
+    public static class ElasticUtils
     {
         public static ElasticClient getElasticClient(Uri url, string indexName, bool deleteIndex )
         {
@@ -50,7 +50,7 @@ namespace SensorTagElastic
             return esClient;
         }
 
-        public static void BulkInsert<T>( ElasticClient client, string index, ICollection<T> items ) where T : class
+        public static void BulkInsert<T>( this ElasticClient client, string index, ICollection<T> items ) where T : class
         {
             const int pageSize = 1000;
             string typeName = typeof(T).Name;
@@ -88,7 +88,7 @@ namespace SensorTagElastic
             }    
         }
 
-        public static void createDateBasedAliases(ElasticClient esClient, string indexName)
+        public static void createDateBasedAliases(this ElasticClient esClient, string indexName)
         {
             Utils.Log("Creating aliases for index {0}-*...", indexName);
 
@@ -111,7 +111,7 @@ namespace SensorTagElastic
         /// <param name="index">Index.</param>
         /// <param name="modifier">Modifier.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public static void ScanAllDocs<T>( ElasticClient esClient, string index, string sortField, Action<T, string> modifier, QueryContainer query ) where T: class 
+        public static void ScanAllDocs<T>( this ElasticClient esClient, string index, string sortField, Action<T, string> modifier, QueryContainer query ) where T: class 
         {
             const string scrollTTLMins = "10m";
             const int scrollPageSize = 500;
@@ -156,7 +156,7 @@ namespace SensorTagElastic
         /// <returns>The high water mark.</returns>
         /// <param name="indexName">IndexName</param>
         /// <param name="query">Term Query to select records</param>
-        public static T getHighWaterMark<T>(ElasticClient client, string indexName, QueryContainer query) where T : class
+        public static T getHighWaterMark<T>(this ElasticClient client, string indexName, QueryContainer query) where T : class
         {
             if (query == null)
                 query = new MatchAllQuery();
@@ -188,13 +188,13 @@ namespace SensorTagElastic
             return null;
         }
 
-        public static void DeleteDuplicates(ElasticClient client, string index)
+        public static void DeleteDuplicates(this ElasticClient client, string index)
         {
             Utils.Log("Loading all docs to check for duplicates...");
 
             var allDocs = new Dictionary<string, SensorReading>();
 
-            ScanAllDocs<SensorReading>(client, index, "timestamp", (doc, id) => { doc.Id = id; allDocs.Add(id, doc); }, null);
+            client.ScanAllDocs<SensorReading>(index, "timestamp", (doc, id) => { doc.Id = id; allDocs.Add(id, doc); }, null);
 
             Utils.Log("{0} documents loaded from ES", allDocs.Count());
             try

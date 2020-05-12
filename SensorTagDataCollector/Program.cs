@@ -97,7 +97,7 @@ namespace SensorTagElastic
 
             Utils.Log("Getting high water mark for {0}...", uuid);
         
-            var mostRecent = ElasticUtils.getHighWaterMark<SensorReading>(EsClient, settings.indexname, query);
+            var mostRecent = EsClient.getHighWaterMark<SensorReading>(settings.indexname, query);
 
             if (mostRecent != null)
             {
@@ -118,7 +118,7 @@ namespace SensorTagElastic
         {
             Utils.Log("Getting high water mark for weather...");
 
-            var mostRecent = ElasticUtils.getHighWaterMark<WeatherReading>(EsClient, settings.weatherUnderground.IndexName, null);
+            var mostRecent = EsClient.getHighWaterMark<WeatherReading>(settings.weatherUnderground.IndexName, null);
 
             if (mostRecent != null)
             {
@@ -136,7 +136,7 @@ namespace SensorTagElastic
         {
             Utils.Log("Getting high water mark for weather...");
 
-            var mostRecent = ElasticUtils.getHighWaterMark<WeatherSummary>(EsClient, settings.weatherUnderground.SummaryIndexName, null);
+            var mostRecent = EsClient.getHighWaterMark<WeatherSummary>(settings.weatherUnderground.SummaryIndexName, null);
 
             if (mostRecent != null)
             {
@@ -163,44 +163,58 @@ namespace SensorTagElastic
                     int dateRangeForBatch = 90;
                     var fromDate = getDeviceHighWaterMark(tag.uuid);
                     var toDate = DateTime.UtcNow;
+                    bool gotRecords = false;
 
-                    // Limit to 90 days at a time
-                    if ((toDate - fromDate).TotalDays > dateRangeForBatch)
-                        toDate = fromDate.AddDays(dateRangeForBatch);
-
-                    Utils.Log("Querying {0} data between {1} and {2}...", tag.name, fromDate, toDate);
-
-                    var body = new { id = tag.slaveId, fromDate, toDate };
-                    var data = tagService.MakeRestRequest<RawTempData>("ethLogs.asmx/GetTemperatureRawData", body);
-
-                    if (data != null && data.d != null )
+                    while (!gotRecords)
                     {
-                        SensorDevice device = new SensorDevice { uuid = tag.uuid, name = tag.name, type = "Tag", location = "" };
-                        allDevices.Add(device);
-                        var records = CreateSensorData(device, data, tag);
+                        // Limit to 90 days at a time
+                        if ((toDate - fromDate).TotalDays > dateRangeForBatch)
+                            toDate = fromDate.AddDays(dateRangeForBatch);
 
-                        if (records.Any())
+                        Utils.Log("Querying {0} data between {1} and {2}...", tag.name, fromDate, toDate);
+
+                        var body = new { id = tag.slaveId, fromDate, toDate };
+                        var data = tagService.MakeRestRequest<RawTempData>("ethLogs.asmx/GetTemperatureRawData", body);
+
+                        if (data != null && data.d != null)
                         {
-                            var firstReading = records.Min(x => x.timestamp);
-                            var lastReading = records.Max(x => x.timestamp);
-                            Utils.Log("Found readings from {0:dd-MMM-yyyy HH:mm:ss} to {1:dd-MMM-yyyy HH:mm:ss}", firstReading, lastReading);
+                            SensorDevice device = new SensorDevice { uuid = tag.uuid, name = tag.name, type = "Tag", location = "" };
+                            allDevices.Add(device);
+                            var records = CreateSensorData(device, data, tag);
 
-                            var newRecords = records.Where(x => x.timestamp > fromDate).ToList();
-
-                            if (newRecords.Any())
+                            if (records.Any())
                             {
-                                Utils.Log("Filtered {0} previously-seen records - storing {1}", records.Count() - newRecords.Count(), newRecords.Count());
+                                gotRecords = true;
 
-                                result.AddRange(newRecords);
+                                var firstReading = records.Min(x => x.timestamp);
+                                var lastReading = records.Max(x => x.timestamp);
+                                Utils.Log("Found readings from {0:dd-MMM-yyyy HH:mm:ss} to {1:dd-MMM-yyyy HH:mm:ss}", firstReading, lastReading);
+
+                                var newRecords = records.Where(x => x.timestamp > fromDate).ToList();
+
+                                if (newRecords.Any())
+                                {
+                                    Utils.Log("Filtered {0} previously-seen records - {1} new", records.Count() - newRecords.Count(), newRecords.Count());
+
+                                    result.AddRange(newRecords);
+                                }
+                                else
+                                    Utils.Log("All records were older than high watermark. Ignoring.");
                             }
-                            else
-                                Utils.Log("All records were older than high watermark. Ignoring.");
+                        }
+
+                        // Throttle to ensure we don't hit the sensortag server too hard.
+                        Utils.Log("Sleeping for 15s to throttle requests.");
+                        Thread.Sleep(10 * 1000);
+
+                        if( ! gotRecords )
+                        {
+                            Utils.Log("No data in date range. Trying next window.");
+
+                            fromDate = toDate;
+                            toDate = DateTime.UtcNow;
                         }
                     }
-
-                    // Throttle to ensure we don't hit the sensortag server too hard.
-                    Utils.Log("Sleeping for 15s to throttle requests.");
-                    Thread.Sleep(15 * 1000);
                 }
             }
 
@@ -349,7 +363,7 @@ namespace SensorTagElastic
                     }
                 }
 
-                ElasticUtils.createDateBasedAliases(EsClient, indexName);
+                EsClient.createDateBasedAliases(indexName);
             }
             else
                 Utils.Log("No readings to ingest.");
@@ -364,20 +378,13 @@ namespace SensorTagElastic
         /// <param name="index"></param>
         private void InsertInBatches<T>(List<T> items, int batchSize, string index ) where T : Reading
         {
-            while (items.Any())
-            {
-                var toStore = items.Take(batchSize).ToList();
+            var now = DateTime.UtcNow;
 
-                var now = DateTime.UtcNow;
+            foreach (var x in items)
+                x.ingestionTimeStamp = now;
 
-                foreach (var x in toStore)
-                    x.ingestionTimeStamp = now;
-
-                Utils.Log($"Bulk inserting {batchSize} records of {items.Count()}");
-                ElasticUtils.BulkInsert(EsClient, index, toStore);
-
-                items = items.Skip(batchSize).ToList();
-            }
+            Utils.Log($"Bulk inserting {batchSize} records of {items.Count()}");
+            EsClient.BulkInsert(index, items);
         }
 
         private static bool DeviceHasLowBattery( SensorReading reading, Settings settings )
@@ -444,7 +451,7 @@ namespace SensorTagElastic
 
             var allDocs = new List<WeatherSummary>();
 
-            ElasticUtils.ScanAllDocs<WeatherSummary>(EsClient, settings.weatherUnderground.IndexName, 
+            EsClient.ScanAllDocs<WeatherSummary>(settings.weatherUnderground.IndexName, 
                                                      "timestamp", (doc, id) => { allDocs.Add(new WeatherSummary { Id = id }); }, q);
 
             var bulkResponse = EsClient.DeleteMany( allDocs );
@@ -650,8 +657,6 @@ namespace SensorTagElastic
                 bool loop = settings.refreshPeriodMins > 0;
 
                 do{
-                    Utils.Log("======== Beginning tag processing.... ========");
-
                     x.ProcessTags(settings);
 
                     if( loop )
