@@ -171,7 +171,7 @@ namespace SensorTagElastic
                         if ((toDate - fromDate).TotalDays > dateRangeForBatch)
                             toDate = fromDate.AddDays(dateRangeForBatch);
 
-                        Utils.Log("Querying {0} data between {1} and {2}...", tag.name, fromDate, toDate);
+                        Utils.Log("Querying {0} data between {1:yy-MMM-yyyy} and {2:yy-MMM-yyyy}...", tag.name, fromDate, toDate);
 
                         var body = new { id = tag.slaveId, fromDate, toDate };
                         var data = tagService.MakeRestRequest<RawTempData>("ethLogs.asmx/GetTemperatureRawData", body);
@@ -204,7 +204,7 @@ namespace SensorTagElastic
                         }
 
                         // Throttle to ensure we don't hit the sensortag server too hard.
-                        Utils.Log("Sleeping for 15s to throttle requests.");
+                        Utils.Log("Sleeping for 10s to throttle requests.");
                         Thread.Sleep(10 * 1000);
 
                         if( ! gotRecords )
@@ -359,7 +359,7 @@ namespace SensorTagElastic
                     {
                         string yearIndex = string.Format("{0}-{1}", indexName, kvp.year);
 
-                        InsertInBatches(kvp.values, 300, yearIndex);
+                        InsertInYearBatches(kvp.values, yearIndex);
                     }
                 }
 
@@ -376,14 +376,14 @@ namespace SensorTagElastic
         /// <param name="items"></param>
         /// <param name="batchSize"></param>
         /// <param name="index"></param>
-        private void InsertInBatches<T>(List<T> items, int batchSize, string index ) where T : Reading
+        private void InsertInYearBatches<T>(List<T> items, string index ) where T : Reading
         {
             var now = DateTime.UtcNow;
 
             foreach (var x in items)
                 x.ingestionTimeStamp = now;
 
-            Utils.Log($"Bulk inserting {batchSize} records of {items.Count()}");
+            Utils.Log($"Bulk inserting {items.Count()} for {index}...");
             EsClient.BulkInsert(index, items);
         }
 
