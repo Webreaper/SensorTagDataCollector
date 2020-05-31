@@ -171,7 +171,7 @@ namespace SensorTagElastic
                         if ((toDate - fromDate).TotalDays > dateRangeForBatch)
                             toDate = fromDate.AddDays(dateRangeForBatch);
 
-                        Utils.Log("Querying {0} data between {1:yy-MMM-yyyy} and {2:yy-MMM-yyyy}...", tag.name, fromDate, toDate);
+                        Utils.Log("Querying {0} data between {1:dd-MMM-yyyy} and {2:dd-MMM-yyyy}...", tag.name, fromDate, toDate);
 
                         var body = new { id = tag.slaveId, fromDate, toDate };
                         var data = tagService.MakeRestRequest<RawTempData>("ethLogs.asmx/GetTemperatureRawData", body);
