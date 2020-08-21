@@ -300,3 +300,4 @@ __pycache__/
 
 # OpenCover UI analysis results
 OpenCover/
+SensorTagDataCollector/mono_crash.11a6748113.0.json
