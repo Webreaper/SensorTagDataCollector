@@ -209,10 +209,15 @@ namespace SensorTagElastic
 
                         if( ! gotRecords )
                         {
-                            Utils.Log("No data in date range. Trying next window.");
-
                             fromDate = toDate;
                             toDate = DateTime.UtcNow;
+
+                            var diff = toDate - fromDate;
+                            // Up to date
+                            if (diff.TotalMinutes < 60 )
+                                break;
+
+                            Utils.Log("No data in date range. Trying next window.");
                         }
                     }
                 }
@@ -670,7 +675,7 @@ namespace SensorTagElastic
             }
             catch( Exception ex )
             {
-                Utils.Log("Unable to initialise settings: {0}", ex.Message);                
+                Console.WriteLine($"Unable to initialise settings: {ex.Message}");              
             }
         }
     }
