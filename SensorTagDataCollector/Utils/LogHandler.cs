@@ -26,8 +26,8 @@ namespace Logging
             logger = new LoggerConfiguration()
                 .MinimumLevel.ControlledBy(logLevel)
                 .WriteTo.Console(outputTemplate: template)
-                .WriteTo.File("QbtCleanup-.log", outputTemplate: template,
-                               rollingInterval: RollingInterval.Day,
+                .WriteTo.File("SensorTag-.log", outputTemplate: template,
+                               rollingInterval: RollingInterval.Month,
                                fileSizeLimitBytes: 104857600)
                 .CreateLogger();
 
