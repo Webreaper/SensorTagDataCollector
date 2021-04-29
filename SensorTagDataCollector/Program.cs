@@ -441,7 +441,7 @@ namespace SensorTagElastic
                                             MinBatPct = x.Select(y => y.batteryPercentage).Min() })
                                         .ToList();
 
-            recentBattery.ForEach(x => { Utils.Log($"Battery level for {x.Name}: {x.MinBattery}v, {x.MinBatPct}% "); });
+            recentBattery.ForEach(x => { Utils.Log($"Battery level for {x.Name}: {x.MinBattery:N2}v, {x.MinBatPct}% "); });
 
             var lowBatteryDevices = readings.Where(x => DeviceHasLowBattery( x, batterySettings ) )
                                             .GroupBy(x => x.device,
@@ -454,7 +454,7 @@ namespace SensorTagElastic
                 foreach (var status in lowBatteryDevices)
                 {
                     var lastReading = readings.Max(x => x.timestamp);
-                    var msg = $"Low Battery - {status.lowestBattery}v (last reading: {lastReading:dd-MMM-yyyy HH:mm:ss})\n";
+                    var msg = $"Low Battery - {status.lowestBattery:N2}v (last reading: {lastReading:dd-MMM-yyyy HH:mm:ss})\n";
                     alerts.Add(new Alert { deviceName = status.device.name, alertText = msg });
                 }
             }
