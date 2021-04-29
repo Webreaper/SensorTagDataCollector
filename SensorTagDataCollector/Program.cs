@@ -392,11 +392,19 @@ namespace SensorTagElastic
             EsClient.BulkInsert(index, items);
         }
 
+        /// <summary>
+        /// Check the battery for either low voltage or low percentage. Either
+        /// can trigger a low battery alert.
+        /// </summary>
+        /// <param name="reading"></param>
+        /// <param name="settings"></param>
+        /// <returns></returns>
         private static bool DeviceHasLowBattery( SensorReading reading, Settings settings )
         {
             bool lowBattery = false;
 
-            if(settings.lowBatteryThresholdPercent == 0 && reading.battery.HasValue )
+            // First check the voltage
+            if(reading.battery.HasValue )
             {
                 // Check for low battery by voltagee
                 if ( reading.device.type != "HiveHome" && reading.battery > 0.0 )
@@ -404,7 +412,9 @@ namespace SensorTagElastic
                     lowBattery = reading.battery < settings.lowBatteryThresholdVolts;
                 }
             }
-            else if( reading.batteryPercentage.HasValue )
+
+            // Now check the percentage.
+            if( ! lowBattery && reading.batteryPercentage.HasValue )
             {
                 // Check for low battery via percentage
                 if (reading.batteryPercentage < settings.lowBatteryThresholdPercent)
@@ -423,6 +433,15 @@ namespace SensorTagElastic
         private void CheckBatteryStatus(ICollection<SensorReading> readings, Settings batterySettings, List<Alert> alerts)
         {
             Utils.Log("Checking battery status for devices...");
+
+            var recentBattery = readings.GroupBy(x => x.device)
+                                        .Select(x => new {
+                                            Name = x.Key.name,
+                                            MinBattery = x.Select(y => y.battery).Min(),
+                                            MinBatPct = x.Select(y => y.batteryPercentage).Min() })
+                                        .ToList();
+
+            recentBattery.ForEach(x => { Utils.Log($"Battery level for {x.Name}: {x.MinBattery}v, {x.MinBatPct}% "); });
 
             var lowBatteryDevices = readings.Where(x => DeviceHasLowBattery( x, batterySettings ) )
                                             .GroupBy(x => x.device,
