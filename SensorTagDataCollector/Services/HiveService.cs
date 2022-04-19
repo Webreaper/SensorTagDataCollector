@@ -138,7 +138,7 @@ namespace Hive
         public int QueryHiveBattery()
         {
             double batteryLevel = -1;
-            var request = new RestRequest("nodes", Method.GET);
+            var request = new RestRequest("nodes", Method.Get);
 
             foreach (var header in headers)
                 request.AddHeader(header.Key, header.Value);
@@ -195,7 +195,7 @@ namespace Hive
 
         public HiveChannel GetHiveChannel(ChannelType channelType)
         {
-            var request = new RestRequest("channels", Method.GET);
+            var request = new RestRequest("channels", Method.Get);
 
             foreach (var header in headers)
                 request.AddHeader(header.Key, header.Value);
@@ -214,7 +214,7 @@ namespace Hive
 
         public Dictionary<long, double> QueryHiveValues(HiveChannel channel, SensorDevice device, DateTime fromDate, DateTime toDate, int refreshIntervalMins)
         {
-            var request = new RestRequest("channels/" + channel.id, Method.GET);
+            var request = new RestRequest("channels/" + channel.id, Method.Get);
 
             foreach (var header in headers)
                 request.AddHeader(header.Key, header.Value);
@@ -246,7 +246,7 @@ namespace Hive
 
         public T MakeRestRequest<T>(string requestMethod, object requestBody ) where T : new()
         {
-            var request = new RestRequest(requestMethod, Method.POST);
+            var request = new RestRequest(requestMethod, Method.Post);
 
             foreach( var header in headers)
                 request.AddHeader(header.Key, header.Value);

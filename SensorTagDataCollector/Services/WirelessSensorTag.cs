@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Net;
 using RestSharp;
 using SensorTagElastic;
 
@@ -64,7 +65,7 @@ namespace WirelessSensorTag
         private const string CookieWTAG = "WTAG";
         private ServerCertificateValidation certValidation = new ServerCertificateValidation();
         private readonly RestClient wstclient;
-        private IList<RestResponseCookie> cookies = null;
+        private CookieCollection cookies = null;
 
         public WirelessSensorTagAPI(string url)
         {
@@ -93,12 +94,12 @@ namespace WirelessSensorTag
 
         public T MakeRestRequest<T>(string requestMethod, object requestBody) where T : new()
         {
-            var request = new RestRequest(requestMethod, Method.POST);
+            var request = new RestRequest(requestMethod, Method.Post);
             if (requestBody != null)
                 request.AddJsonBody(requestBody);
 
             if (cookies != null)
-                request.AddCookie(cookies[0].Name, cookies[0].Value);
+                wstclient.CookieContainer.Add( cookies[0] );
 
             T data = default(T);
 
@@ -119,7 +120,7 @@ namespace WirelessSensorTag
                         if (cookies == null)
                         {
                             Utils.Log("Storing cookies from Auth request: {0}", requestMethod);
-                            cookies = (IList<RestResponseCookie>)queryResult.Cookies;
+                            cookies = queryResult.Cookies;
                         }
                     }
                 }

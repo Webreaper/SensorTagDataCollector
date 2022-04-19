@@ -199,7 +199,10 @@ namespace SensorTagElastic
                                     result.AddRange(newRecords);
                                 }
                                 else
+                                {
                                     Utils.Log("All records were older than high watermark. Ignoring.");
+                                    gotRecords = false;
+                                }
                             }
                         }
 

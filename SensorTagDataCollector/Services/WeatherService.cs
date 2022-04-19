@@ -172,7 +172,7 @@ namespace Weather
 
         public T MakeRestRequest<T>(string requestMethod ) where T : new()
         {
-            var request = new RestRequest(requestMethod, Method.GET);
+            var request = new RestRequest(requestMethod, Method.Get);
 
             T data = default(T);
 
