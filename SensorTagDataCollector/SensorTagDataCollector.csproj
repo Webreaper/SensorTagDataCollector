@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="RestSharp" Version="107.3.1-alpha.0.24" />
+    <PackageReference Include="RestSharp" Version="112.0.0" />
     <PackageReference Include="MailKit" Version="3.2.0" />
     <PackageReference Include="System.ServiceModel.Syndication" Version="6.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="4.0.2-dev-00890" />
